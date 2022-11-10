@@ -6,8 +6,13 @@
 XrSession xrSessionHandle = XR_NULL_HANDLE;
 std::array<XrSwapchain, 2> xrSwapchains = { VK_NULL_HANDLE, VK_NULL_HANDLE };
 std::array<XrViewConfigurationView, 2> xrViewConfs = {};
-std::array<std::vector<XrSwapchainImageVulkan2KHR>, 2> xrSwapchainImages = {};
+std::array<std::vector<XrSwapchainImageD3D12KHR>, 2> xrSwapchainImages = {};
 XrSpace xrSpaceHandle = XR_NULL_HANDLE;
+
+HANDLE vkSharedFence;
+std::array<VkImage, 2> vkSharedImages = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+uint32_t sharedTexture_width = 0;
+uint32_t sharedTexture_height = 0;
 
 bool beganRendering = false;
 
@@ -21,16 +26,14 @@ XrCompositionLayerProjection frameRenderLayer = { XR_TYPE_COMPOSITION_LAYER_PROJ
 
 // Functions
 
-XrSwapchain RND_CreateSwapchain(XrSession xrSession, XrViewConfigurationView& viewConf) {
-	logPrint("Creating OpenXR swapchain...");
-	
-	// Finds the first matching VkFormat (uint32) that matches the int64 from OpenXR
-	auto getBestSwapchainFormat = [](const std::vector<int64_t>& runtimePreferredFormats, const std::vector<VkFormat>& applicationSupportedFormats) -> VkFormat {
+DXGI_FORMAT RNDUtil_GetSwapchainFormat() {
+	// Finds the first matching DXGI_FORMAT (int) that matches the int64 from OpenXR
+	auto getBestSwapchainFormat = [](const std::vector<int64_t>& runtimePreferredFormats, const std::vector<DXGI_FORMAT>& applicationSupportedFormats) -> DXGI_FORMAT {
 		auto found = std::find_first_of(std::begin(runtimePreferredFormats), std::end(runtimePreferredFormats), std::begin(applicationSupportedFormats), std::end(applicationSupportedFormats));
 		if (found == std::end(runtimePreferredFormats)) {
 			throw std::runtime_error("OpenXR runtime doesn't support any of the presenting modes that the GPU drivers support.");
 		}
-		return (VkFormat)*found;
+		return (DXGI_FORMAT)*found;
 	};
 
 	uint32_t swapchainCount = 0;
@@ -39,65 +42,103 @@ XrSwapchain RND_CreateSwapchain(XrSession xrSession, XrViewConfigurationView& vi
 	xrEnumerateSwapchainFormats(xrSharedSession, swapchainCount, &swapchainCount, (int64_t*)xrSwapchainFormats.data());
 
 	logPrint("OpenXR supported swapchain formats:");
-	for (uint32_t i=0; i<swapchainCount; i++) {
-		logPrint(std::format(" - {:08x} = {}", (int64_t)xrSwapchainFormats[i], string_VkFormat((VkFormat)xrSwapchainFormats[i])));
+	for (uint32_t i = 0; i < swapchainCount; i++) {
+		logPrint(std::format(" - {}", (std::underlying_type_t<DXGI_FORMAT>)xrSwapchainFormats[i]));
 	}
 
-	std::vector<VkFormat> preferredColorFormats = {
-		VK_FORMAT_B8G8R8A8_SRGB // Currently the framebuffer that gets caught is using VK_FORMAT_A2B10G10R10_UNORM_PACK32
+	std::vector<DXGI_FORMAT> preferredColorFormats = {
+		DXGI_FORMAT_R8G8B8A8_UNORM_SRGB // Currently the framebuffer that gets caught is using VK_FORMAT_A2B10G10R10_UNORM_PACK32
 	};
 
-	VkFormat xrSwapchainFormat = getBestSwapchainFormat(xrSwapchainFormats, preferredColorFormats);
-	logPrint(std::format("Picked {} as the texture format for swapchain", string_VkFormat(xrSwapchainFormat)));
+	DXGI_FORMAT xrSwapchainFormat = getBestSwapchainFormat(xrSwapchainFormats, preferredColorFormats);
+	logPrint(std::format("Picked {} as the texture format for swapchain", (std::underlying_type_t<DXGI_FORMAT>)xrSwapchainFormat));
+
+	return xrSwapchainFormat;
+}
+
+XrSwapchain RND_CreateSwapchain(XrSession xrSession, XrViewConfigurationView& viewConf, DXGI_FORMAT swapchainFormat) {
+	logPrint("Creating OpenXR swapchain...");
 
 	XrSwapchainCreateInfo swapchainCreateInfo = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
 	swapchainCreateInfo.width = viewConf.recommendedImageRectWidth;
 	swapchainCreateInfo.height = viewConf.recommendedImageRectHeight;
 	swapchainCreateInfo.arraySize = 1;
 	swapchainCreateInfo.sampleCount = viewConf.recommendedSwapchainSampleCount;
-	swapchainCreateInfo.format = xrSwapchainFormat;
+	swapchainCreateInfo.format = swapchainFormat;
 	swapchainCreateInfo.mipCount = 1;
 	swapchainCreateInfo.faceCount = 1;
+	// todo: Transfer DST bit could probably be dropped
 	swapchainCreateInfo.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
 	swapchainCreateInfo.createFlags = 0;
 
-	XrSwapchain retSwapchain = VK_NULL_HANDLE;
+	XrSwapchain retSwapchain = XR_NULL_HANDLE;
 	checkXRResult(xrCreateSwapchain(xrSessionHandle, &swapchainCreateInfo, &retSwapchain), "Failed to create OpenXR swapchain images!");
 
-	logPrint("Created OpenXR swapchain...");
+	logPrint("Created OpenXR swapchain!");
 	return retSwapchain;
 }
 
-std::vector<XrSwapchainImageVulkan2KHR> RND_EnumerateSwapchainImages(XrSwapchain xrSwapchain) {
+std::vector<XrSwapchainImageD3D12KHR> RND_EnumerateSwapchainImages(XrSwapchain xrSwapchain) {
 	logPrint("Creating OpenXR swapchain images...");
 	uint32_t swapchainChainCount = 0;
 	xrEnumerateSwapchainImages(xrSwapchain, 0, &swapchainChainCount, NULL);
-	std::vector<XrSwapchainImageVulkan2KHR> swapchainImages(swapchainChainCount, { XR_TYPE_SWAPCHAIN_IMAGE_VULKAN2_KHR });
+	std::vector<XrSwapchainImageD3D12KHR> swapchainImages(swapchainChainCount, { XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR });
 	checkXRResult(xrEnumerateSwapchainImages(xrSwapchain, swapchainChainCount, &swapchainChainCount, reinterpret_cast<XrSwapchainImageBaseHeader*>(swapchainImages.data())), "Failed to enumerate OpenXR swapchain images!");
-	logPrint("Created OpenXR swapchain images");
+	logPrint(std::format("Created {} OpenXR swapchain images", swapchainChainCount));
 	return swapchainImages;
 }
 
-void RND_InitRendering() {
-	if (currRuntime == STEAMVR_RUNTIME) {
-		xrSessionHandle = XR_CreateSession(topVkInstance, vkSharedDevice, vkSharedPhysicalDevice);
-	}
-	else {
-		xrSessionHandle = XR_CreateSession(vkSharedInstance, vkSharedDevice, physicalDevices.front());
-	}
-	xrViewConfs = XR_CreateViewConfiguration();
-	xrSwapchains[0] = RND_CreateSwapchain(xrSessionHandle, xrViewConfs[0]);
-	xrSwapchains[1] = RND_CreateSwapchain(xrSessionHandle, xrViewConfs[1]);
+VkImage RND_CreateSharedTexture(uint32_t srcWidth, uint32_t srcHeight, VkFormat srcFormat) {
+	checkAssert(srcFormat == VK_FORMAT_A2B10G10R10_UNORM_PACK32, "Currently only VK_FORMAT_A2B10G10R10_UNORM_PACK32 is supported for the shared texture");
 
+	// Use closest resembling texture type, see https://github.com/doitsujin/dxvk/blob/master/src/dxgi/dxgi_format.cpp
+	HANDLE handle = D3D12_CreateSharedTexture(srcWidth, srcHeight, DXGI_FORMAT_R10G10B10A2_UNORM);
+	VkImage image = RNDVK_ImportImage(handle, srcWidth, srcHeight, srcFormat);
+	
+	return image;
+}
+
+void RND_InitRendering(uint32_t srcWidth, uint32_t srcHeight, VkFormat srcFormat) {
+	// Initializing shared rendering
+	D3D12_CreateInstance(d3d12SharedFeatureLevel, d3d12SharedAdapter);
+	
+	XrGraphicsBindingD3D12KHR graphicsBinding = D3D12_GetGraphicsBinding();
+	xrSessionHandle = XR_CreateSession(graphicsBinding);
+	xrViewConfs = XR_CreateViewConfiguration();
+	xrSpaceHandle = XR_CreateSpace();
+
+	// Creating swapchain
+	DXGI_FORMAT swapchainFormat = RNDUtil_GetSwapchainFormat();
+	xrSwapchains[0] = RND_CreateSwapchain(xrSessionHandle, xrViewConfs[0], swapchainFormat);
+	xrSwapchains[1] = RND_CreateSwapchain(xrSessionHandle, xrViewConfs[1], swapchainFormat);
+	
 	xrSwapchainImages[0] = RND_EnumerateSwapchainImages(xrSwapchains[0]);
 	xrSwapchainImages[1] = RND_EnumerateSwapchainImages(xrSwapchains[1]);
 
-	xrSpaceHandle = XR_CreateSpace();
+	D3D12_CreateShaderPipeline(swapchainFormat, 2/*unused*/);
+
+	// Initialize shared textures and fences
+	vkSharedFence = D3D12_CreateSharedFence();
+	RNDVK_CreateSemaphore(vkSharedFence);
+	vkSharedImages[0] = RND_CreateSharedTexture(srcWidth, srcHeight, srcFormat);
+	vkSharedImages[1] = RND_CreateSharedTexture(srcWidth, srcHeight, srcFormat);
+	sharedTexture_width = srcWidth;
+	sharedTexture_height = srcHeight;
+}
+
+void RND_UpdateViews() {
+	uint32_t viewCountOutput;
+
+	XrViewLocateInfo viewLocateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+	viewLocateInfo.displayTime = frameState.predictedDisplayTime;
+	viewLocateInfo.space = xrSpaceHandle;
+	viewLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+	checkXRResult(xrLocateViews(xrSessionHandle, &viewLocateInfo, &frameViewState, (uint32_t)frameViews.size(), &viewCountOutput, frameViews.data()), "Failed to locate views in OpenXR!");
+	assert(viewCountOutput == 2);
 }
 
 void RND_BeginFrame() {
-	if (xrSessionHandle == XR_NULL_HANDLE)
-		RND_InitRendering();
+	checkAssert(xrSessionHandle != XR_NULL_HANDLE, "Tried to begin frame without initializing rendering first!");
 
 	XrFrameWaitInfo waitFrameInfo = { XR_TYPE_FRAME_WAIT_INFO};
 	checkXRResult(xrWaitFrame(xrSessionHandle, &waitFrameInfo, &frameState), "Failed to wait for next frame!");
@@ -118,61 +159,6 @@ void RND_BeginFrame() {
 
 // todo: Call xrLocateSpace maybe
 
-void RND_UpdateViews() {
-	uint32_t viewCountOutput;
-
-	XrViewLocateInfo viewLocateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
-	viewLocateInfo.displayTime = frameState.predictedDisplayTime;
-	viewLocateInfo.space = xrSpaceHandle;
-	viewLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-	checkXRResult(xrLocateViews(xrSessionHandle, &viewLocateInfo, &frameViewState, (uint32_t)frameViews.size(), &viewCountOutput, frameViews.data()), "Failed to locate views in OpenXR!");
-	assert(viewCountOutput == 2);
-}
-
-void RND_CopyVulkanTexture(VkCommandBuffer copyCMDBuffer, VkImage sourceImage, VkImage destinationImage) {
-	VkImageMemoryBarrier copyToBarrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-	copyToBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copyToBarrier.subresourceRange.baseMipLevel = 0;
-	copyToBarrier.subresourceRange.levelCount = 1;
-	copyToBarrier.subresourceRange.baseArrayLayer = 0;
-	copyToBarrier.subresourceRange.layerCount = 1;
-	copyToBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	copyToBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	copyToBarrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-	copyToBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	copyToBarrier.image = sourceImage;
-	device_dispatch[GetKey(copyCMDBuffer)].CmdPipelineBarrier(copyCMDBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &copyToBarrier);
-
-	VkImageCopy copyRegion = {};
-	copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copyRegion.srcSubresource.layerCount = 1;
-	copyRegion.srcSubresource.mipLevel = 0;
-	copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	copyRegion.dstSubresource.layerCount = 1;
-	copyRegion.dstSubresource.mipLevel = 0;
-	copyRegion.extent.width = 720;
-	copyRegion.extent.height = 720;
-	//copyRegion.extent.width = std::max(1u, 800 >> 1);
-	//copyRegion.extent.height = std::max(1u, presentTextureSize.height >> 1);
-	copyRegion.extent.depth = 1;
-
-	device_dispatch[GetKey(copyCMDBuffer)].CmdCopyImage(copyCMDBuffer, sourceImage, VK_IMAGE_LAYOUT_GENERAL, destinationImage, VK_IMAGE_LAYOUT_GENERAL, 1, &copyRegion);
-	logPrint("Copied the source image to the VR presenting image!");
-
-	VkImageMemoryBarrier optimalFormatBarrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
-	optimalFormatBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	optimalFormatBarrier.subresourceRange.baseMipLevel = 0;
-	optimalFormatBarrier.subresourceRange.levelCount = 1;
-	optimalFormatBarrier.subresourceRange.baseArrayLayer = 0;
-	optimalFormatBarrier.subresourceRange.layerCount = 1;
-	optimalFormatBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-	optimalFormatBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	optimalFormatBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	optimalFormatBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	optimalFormatBarrier.image = destinationImage;
-	device_dispatch[GetKey(copyCMDBuffer)].CmdPipelineBarrier(copyCMDBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &optimalFormatBarrier);
-}
-
 uint32_t alternateIndex = 0;
 
 void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkImage copyImage) {
@@ -180,7 +166,7 @@ void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkI
 
 	xrSwapchain = xrSwapchains[alternateIndex];
 	
-	if (frameState.shouldRender) {
+	if (currRuntime == OpenXRRuntime::OCULUS_RUNTIME ? true/*todo: find out why oculus always returns false in shouldRender!*/ : frameState.shouldRender) {
 		RND_UpdateViews();
 		if (frameViewState.viewStateFlags & (XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
 			uint32_t swapchainImageIndex = 0;
@@ -191,16 +177,17 @@ void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkI
 			if (XrResult waitResult = xrWaitSwapchainImage(xrSwapchain, &waitSwapchainInfo); waitResult == XR_TIMEOUT_EXPIRED && XR_SUCCEEDED(waitResult)) {
 				checkXRResult(waitResult, "Failed to wait for swapchain image!");
 			}
-
-			//RND_CopyVulkanTexture(copyCmdBuffer, copyImage, xrSwapchainImages[alternateIndex][swapchainImageIndex].image);
+			
+			RNDVK_CopyImage(copyCmdBuffer, copyImage, vkSharedImages[alternateIndex]);
+			D3D12_RenderFrameToSwapchain(alternateIndex, xrSwapchainImages[alternateIndex][swapchainImageIndex].texture, xrViewConfs[0].recommendedImageRectWidth, xrViewConfs[0].recommendedImageRectHeight);
 
 			float leftHalfFOV = glm::degrees(frameViews[0].fov.angleLeft);
 			float rightHalfFOV = glm::degrees(frameViews[0].fov.angleRight);
 			float upHalfFOV = glm::degrees(frameViews[0].fov.angleUp);
 			float downHalfFOV = glm::degrees(frameViews[0].fov.angleDown);
 
-			float horizontalHalfFOV = (float)(abs(frameViews[0].fov.angleLeft) + abs(frameViews[0].fov.angleRight)) * 0.5;
-			float verticalHalfFOV = (float)(abs(frameViews[0].fov.angleUp) + abs(frameViews[0].fov.angleDown)) * 0.5;
+			float horizontalHalfFOV = (float)(abs(frameViews[0].fov.angleLeft) + abs(frameViews[0].fov.angleRight)) * 0.5f;
+			float verticalHalfFOV = (float)(abs(frameViews[0].fov.angleUp) + abs(frameViews[0].fov.angleDown)) * 0.5f;
 
 			for (size_t i = 0; i < frameProjectionViews.size(); i++) {
 				frameProjectionViews[i].pose = frameViews[i].pose;
@@ -210,8 +197,14 @@ void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkI
 				frameProjectionViews[i].fov.angleUp = verticalHalfFOV;
 				frameProjectionViews[i].fov.angleDown = -verticalHalfFOV;
 				frameProjectionViews[i].subImage.swapchain = xrSwapchain;
-				frameProjectionViews[i].subImage.imageRect = { .offset = {0, 0}, .extent = {.width = (int32_t)xrViewConfs[i].recommendedImageRectWidth, .height = (int32_t)xrViewConfs[i].recommendedImageRectHeight} };
-				frameProjectionViews[i].subImage.imageArrayIndex = i;
+				frameProjectionViews[i].subImage.imageRect = {
+					.offset = {0, 0},
+					.extent = {
+						.width = (int32_t)xrViewConfs[i].recommendedImageRectWidth,
+						.height = (int32_t)xrViewConfs[i].recommendedImageRectHeight
+					}
+				};
+				frameProjectionViews[i].subImage.imageArrayIndex = 0;
 			}
 			
 			frameRenderLayer.layerFlags = NULL;
@@ -227,8 +220,7 @@ void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkI
 }
 
 void RND_EndFrame() {
-	if (xrSessionHandle == XR_NULL_HANDLE)
-		RND_InitRendering();
+	checkAssert(xrSessionHandle != XR_NULL_HANDLE, "Tried to begin frame without initializing rendering first!");
 
 	XrFrameEndInfo frameEndInfo = { XR_TYPE_FRAME_END_INFO };
 	frameEndInfo.displayTime = frameState.predictedDisplayTime;
@@ -257,7 +249,7 @@ VK_LAYER_EXPORT VkResult VKAPI_CALL Layer_QueuePresentKHR(VkQueue queue, const V
 	}
 
 	if (xrSessionHandle != VK_NULL_HANDLE) {
-		if (beganRendering) RND_EndFrame();
+		RND_EndFrame();
 		RND_BeginFrame();
 		beganRendering = true;
 	}

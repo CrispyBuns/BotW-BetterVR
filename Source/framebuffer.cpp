@@ -143,14 +143,16 @@ VK_LAYER_EXPORT void VKAPI_CALL Layer_CmdEndRenderPass(VkCommandBuffer commandBu
 				FB_searchSizeFound = true;
 				FB_searchSize.width = biggestResolution.width;
 				FB_searchSize.height = biggestResolution.height;
-				RND_InitRendering();
+				RND_InitRendering(FB_searchSize.width, FB_searchSize.height, FB_searchFormat);
 				XR_BeginSession();
+				RND_BeginFrame();
 			}
 		}
 		else {
 			// If framebuffer was found and it's (one of) the last render pass of the frame, copy any texture buffers that match the unscaled viewport resolution
+			checkAssert(unscaledImages.size());			
 			for (const VkImage& image : unscaledImages) {
-				logPrint(std::format("Pick image {}", (void*)image));
+				logPrint(std::format("Pick image {}", (void*)image));				
 				RND_RenderFrame(XR_NULL_HANDLE, commandBuffer, image);
 			}
 
@@ -163,4 +165,8 @@ VK_LAYER_EXPORT void VKAPI_CALL Layer_CmdEndRenderPass(VkCommandBuffer commandBu
 		scoped_lock l(global_lock);
 		device_dispatch[GetKey(commandBuffer)].CmdEndRenderPass(commandBuffer);
 	}
+}
+
+VkExtent2D FB_GetFrameDimensions() {
+	return FB_searchSize;
 }

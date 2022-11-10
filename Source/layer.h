@@ -27,6 +27,9 @@ extern VkInstance vkSharedInstance;
 extern VkPhysicalDevice vkSharedPhysicalDevice;
 extern VkDevice vkSharedDevice;
 
+extern D3D_FEATURE_LEVEL d3d12SharedFeatureLevel;
+extern LUID d3d12SharedAdapter;
+
 extern XrInstance xrSharedInstance;
 extern XrSystemId xrSharedSystemId;
 extern XrSession xrSharedSession;
@@ -56,42 +59,42 @@ void logPrint(const std::string_view& message_view);
 void logTimeElapsed(char* prefixMessage, LARGE_INTEGER time);
 void checkXRResult(XrResult result, const char* errorMessage = nullptr);
 void checkVkResult(VkResult result, const char* errorMessage = nullptr);
+void checkHResult(HRESULT result, const char* errorMessage = nullptr);
+void checkAssert(bool assert, const char* errorMessage = nullptr);
 
 // xr functions
 void XR_initInstance();
-void XR_GetSupportedVulkanVersions(XrVersion* minVulkanVersion, XrVersion* maxVulkanVersion);
-VkResult XR_CreateCompatibleVulkanInstance(PFN_vkGetInstanceProcAddr getInstanceProcAddr, const VkInstanceCreateInfo* vulkanCreateInfo, const VkAllocationCallbacks* vulkanAllocator, VkInstance* vkInstancePtr);
-VkPhysicalDevice XR_GetPhysicalDevice(VkInstance vkInstance);
-VkResult XR_CreateCompatibleVulkanDevice(PFN_vkGetInstanceProcAddr getInstanceProcAddr, VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* createInfo, const VkAllocationCallbacks* allocator, VkDevice* vkDevicePtr);
+void XR_deinitInstance();
 std::array<XrViewConfigurationView, 2> XR_CreateViewConfiguration();
-XrSession XR_CreateSession(VkInstance vkInstance, VkDevice vkDevice, VkPhysicalDevice vkPhysicalDevice);
+void XR_GetSupportedAdapter(D3D_FEATURE_LEVEL* minFeatureLevel, LUID* adapterLUID);
+XrSession XR_CreateSession(XrGraphicsBindingD3D12KHR& d3d12Binding);
 void XR_BeginSession();
 XrSpace XR_CreateSpace();
 
+void D3D12_CreateInstance(D3D_FEATURE_LEVEL minFeatureLevel, LUID adapterLUID);
+void D3D12_CreateShaderPipeline(DXGI_FORMAT swapchainFormat, uint32_t swapchainCount);
+HANDLE D3D12_CreateSharedFence();
+HANDLE D3D12_CreateSharedTexture(uint32_t width, uint32_t height, DXGI_FORMAT format);
+void D3D12_RenderFrameToSwapchain(uint32_t textureIdx, ID3D12Resource* swapchain, uint32_t swapchainWidth, uint32_t swapchainHeight);
+XrGraphicsBindingD3D12KHR D3D12_GetGraphicsBinding();
+void D3D12_DestroyInstance();
+
+VkSemaphore RNDVK_CreateSemaphore(HANDLE d3d12Fence);
+VkImage RNDVK_ImportImage(HANDLE d3d12Texture, uint32_t width, uint32_t height, VkFormat format);
+void RNDVK_CopyImage(VkCommandBuffer currCmdBuffer, VkImage srcImage, VkImage dstImage);
+
 // rendering functions
-void RND_InitRendering();
+void RND_InitRendering(uint32_t srcWidth, uint32_t srcHeight, VkFormat srcFormat);
 void RND_BeginFrame();
-void RND_UpdateViews();
-void RND_CopyVulkanTexture(VkCommandBuffer copyCMDBuffer, VkImage sourceImage, VkImage destinationImage);
 void RND_RenderFrame(XrSwapchain xrSwapchain, VkCommandBuffer copyCmdBuffer, VkImage copyImage);
 void RND_EndFrame();
 VK_LAYER_EXPORT VkResult VKAPI_CALL Layer_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence);
 VK_LAYER_EXPORT VkResult VKAPI_CALL Layer_QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo);
 
-// SteamVR hooks
-void SteamVRHook_initialize();
-PFN_vkVoidFunction VKAPI_CALL SteamVRHook_GetInstanceProcAddr(VkInstance instance, const char* pName);
-PFN_vkVoidFunction VKAPI_CALL SteamVRHook_GetDeviceProcAddr(VkDevice device, const char* pName);
-
-// OculusVR hook
-extern std::vector<VkPhysicalDevice> physicalDevices;
-extern std::vector<VkPhysicalDevice> layerPhysicalDevices;
-void OculusVRHook_initialize(VkInstanceCreateInfo* createInfo);
-PFN_vkVoidFunction VKAPI_CALL OculusVRHook_GetInstanceProcAddr(VkInstance instance, const char* pName);
-PFN_vkVoidFunction VKAPI_CALL OculusVRHook_GetDeviceProcAddr(VkDevice device, const char* pName);
-
 
 // framebuffer functions
+VkExtent2D FB_GetFrameDimensions();
+
 VK_LAYER_EXPORT VkResult VKAPI_CALL Layer_CreateImage(VkDevice device, const VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImage* pImage);
 VK_LAYER_EXPORT VkResult VKAPI_CALL Layer_CreateImageView(VkDevice device, const VkImageViewCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImageView* pView);
 VK_LAYER_EXPORT void VKAPI_CALL Layer_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, uint32_t descriptorCopyCount, const VkCopyDescriptorSet* pDescriptorCopies);

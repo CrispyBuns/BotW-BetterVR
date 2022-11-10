@@ -13,6 +13,9 @@
     <ClInclude Include="memory.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="shader.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Header Files">
@@ -21,7 +24,10 @@
     <Filter Include="Source Files">
       <UniqueIdentifier>{f46a42e7-ce4a-466a-8e51-54f2e31f1fde}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Graphic Pack">
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{a40b89f0-2d34-4217-82e1-2c2a68340f78}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resource Files\Graphic Pack">
       <UniqueIdentifier>{275386b2-6151-4008-bf3b-29fda6c7bec7}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -44,22 +50,22 @@
     <ClCompile Include="framebuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="steamvr.cpp">
+    <ClCompile Include="d3d12.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ovr.cpp">
+    <ClCompile Include="vulkan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="BetterVR_Layer.json">
-      <Filter>Source Files</Filter>
-    </CopyFileToFolders>
     <CopyFileToFolders Include="..\Graphic Packs\BreathOfTheWild_BetterVR\rules.txt">
-      <Filter>Graphic Pack</Filter>
+      <Filter>Resource Files\Graphic Pack</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="..\Graphic Packs\BreathOfTheWild_BetterVR\patch_BetterVR.asm">
-      <Filter>Graphic Pack</Filter>
+      <Filter>Resource Files\Graphic Pack</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="BetterVR_Layer.json">
+      <Filter>Resource Files</Filter>
     </CopyFileToFolders>
   </ItemGroup>
 </Project>

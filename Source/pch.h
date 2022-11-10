@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <winrt/base.h>
+#undef CreateSemaphore
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #define VK_NO_PROTOTYPES
@@ -11,8 +12,18 @@
 
 #define HOOK_PROC_FUNC(func) if(!strcmp(pName, "vk" #func)) return (PFN_vkVoidFunction)&Layer_##func;
 
+//#include <directx/d3dx12.h>
+#include <d3d12.h>
+#include <dxgi1_6.h>
+#include <D3Dcompiler.h>
+#pragma comment(lib, "d3d12.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "D3DCompiler.lib")
+#include <wrl/client.h>
+using Microsoft::WRL::ComPtr;
+
 #define XR_USE_PLATFORM_WIN32
-#define XR_USE_GRAPHICS_API_VULKAN
+#define XR_USE_GRAPHICS_API_D3D12
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
@@ -22,6 +33,7 @@
 #include <unordered_set>
 #include <vector>
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <assert.h>
 #include <thread>
@@ -45,10 +57,7 @@
 #define VK_LAYER_EXPORT extern "C"
 #endif
 
-static PFN_xrGetVulkanGraphicsRequirements2KHR func_xrGetVulkanGraphicsRequirements2KHR = nullptr;
-static PFN_xrCreateVulkanInstanceKHR func_xrCreateVulkanInstanceKHR = nullptr;
-static PFN_xrCreateVulkanDeviceKHR func_xrCreateVulkanDeviceKHR = nullptr;
-static PFN_xrGetVulkanGraphicsDevice2KHR func_xrGetVulkanGraphicsDevice2KHR = nullptr;
+static PFN_xrGetD3D12GraphicsRequirementsKHR func_xrGetD3D12GraphicsRequirementsKHR = nullptr;
 
 static PFN_xrConvertTimeToWin32PerformanceCounterKHR func_xrConvertTimeToWin32PerformanceCounterKHR = nullptr;
 static PFN_xrConvertWin32PerformanceCounterToTimeKHR func_xrConvertWin32PerformanceCounterToTimeKHR = nullptr;
@@ -68,21 +77,4 @@ static inline void* dispatch_key_from_handle(const void* dispatch_handle) {
 	// The Vulkan loader writes the dispatch table pointer right to the start of the object, so use that as a key for lookup
 	// This ensures that all objects of a specific level (device or instance) will use the same dispatch table
 	return *(void**)dispatch_handle;
-}
-
-
-static std::vector<const char*> modifyExtensions(uint32_t* extCount, const char** origExt, std::vector<std::string>* mutateableNewExts) {
-	for (uint32_t i = 0; i < *extCount; i++) {
-		if (std::find(mutateableNewExts->begin(), mutateableNewExts->end(), origExt[i]) == mutateableNewExts->end()) {
-			mutateableNewExts->emplace_back(origExt[i]);
-		}
-	}
-
-	std::vector<const char*> cstrArray(mutateableNewExts->size());
-	*extCount = (uint32_t)mutateableNewExts->size();
-	for (std::string& extensionStr : *mutateableNewExts) {
-		cstrArray.push_back(extensionStr.data());
-	}
-
-	origExt = cstrArray.data();
 }

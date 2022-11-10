@@ -52,18 +52,39 @@ void checkXRResult(XrResult result, const char* errorMessage) {
 	if (XR_FAILED(result)) {
 		if (errorMessage == nullptr) {
 #ifdef _DEBUG
-			logPrint("[Error] An unknown error has occured! Fatal crash!");
+			logPrint(std::format("[Error] An unknown error (result was {}) has occurred!", (std::underlying_type_t<XrResult>)result));
 			__debugbreak();
 #endif
-			MessageBoxA(NULL, "An unknown error has occured which caused a fatal crash!", "An error occured!", MB_OK | MB_ICONERROR);
-			throw std::runtime_error("Undescribed error occured!");
+			MessageBoxA(NULL, std::format("An unknown error {} has occurred which caused a fatal crash!", (std::underlying_type_t<XrResult>)result).c_str(), "An error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error("Undescribed error occurred!");
 		}
 		else {
 #ifdef _DEBUG
-			logPrint(std::string("[Error] Error ")+std::to_string(result)+": "+std::string(errorMessage));
+			logPrint(std::format("[Error] Error {}: {}", (std::underlying_type_t<XrResult>)result, errorMessage));
 			__debugbreak();
 #endif
-			MessageBoxA(NULL, errorMessage, "A fatal error occured!", MB_OK | MB_ICONERROR);
+			MessageBoxA(NULL, errorMessage, "A fatal error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error(errorMessage);
+		}
+	}
+}
+
+void checkHResult(HRESULT result, const char* errorMessage) {
+	if (FAILED(result)) {
+		if (errorMessage == nullptr) {
+#ifdef _DEBUG
+			logPrint(std::format("[Error] An unknown error (result was {}) has occurred!", result));
+			__debugbreak();
+#endif
+			MessageBoxA(NULL, std::format("An unknown error {} has occurred which caused a fatal crash!", result).c_str(), "A fatal error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error("Undescribed error occurred!");
+		}
+		else {
+#ifdef _DEBUG
+			logPrint(std::format("[Error] Error {}: {}", result, errorMessage));
+			__debugbreak();
+#endif
+			MessageBoxA(NULL, errorMessage, "A fatal error occurred!", MB_OK | MB_ICONERROR);
 			throw std::runtime_error(errorMessage);
 		}
 	}
@@ -74,17 +95,38 @@ void checkVkResult(VkResult result, const char* errorMessage) {
 		if (errorMessage == nullptr) {
 #ifdef _DEBUG
 			__debugbreak();
-			logPrint((std::string("[Error] An unknown error has occured! Fatal crash!")));
+			logPrint(std::format("[Error] An unknown error (result was {}) has occurred!", (std::underlying_type_t<VkResult>)result));
 #endif
-			MessageBoxA(NULL, "An unknown error has occured which caused a fatal crash!", "A fatal error occured!", MB_OK | MB_ICONERROR);
-			throw std::runtime_error("Undescribed error occured!");
+			MessageBoxA(NULL, std::format("An unknown error {} has occurred which caused a fatal crash!", (std::underlying_type_t<VkResult>)result).c_str(), "A fatal error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error("Undescribed error occurred!");
 		}
 		else {
 #ifdef _DEBUG
+			logPrint(std::format("[Error] Error {}: {}", (std::underlying_type_t<VkResult>)result, errorMessage));
 			__debugbreak();
-			logPrint((std::string("[Error] ") + std::string(errorMessage)));
 #endif
-			MessageBoxA(NULL, errorMessage, "A fatal error occured!", MB_OK | MB_ICONERROR);
+			MessageBoxA(NULL, errorMessage, "A fatal error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error(errorMessage);
+		}
+	}
+}
+
+void checkAssert(bool assert, const char* errorMessage) {
+	if (!assert) {
+		if (errorMessage == nullptr) {
+#ifdef _DEBUG
+			__debugbreak();
+			logPrint("[Error] Something unexpected happened that prevents further execution!");
+#endif
+			MessageBoxA(NULL, "Something unexpected happened that prevents further execution!", "A fatal error occurred!", MB_OK | MB_ICONERROR);
+			throw std::runtime_error("Unexpected assertion occurred!");
+		}
+		else {
+#ifdef _DEBUG
+			logPrint(std::format("[Error] {}", errorMessage));
+			__debugbreak();
+#endif
+			MessageBoxA(NULL, errorMessage, "A fatal error occurred!", MB_OK | MB_ICONERROR);
 			throw std::runtime_error(errorMessage);
 		}
 	}

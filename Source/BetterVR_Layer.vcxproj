@@ -99,19 +99,20 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="d3d12.cpp" />
     <ClCompile Include="framebuffer.cpp" />
     <ClCompile Include="layer_setup.cpp" />
     <ClCompile Include="logging.cpp" />
     <ClCompile Include="cemu.cpp" />
     <ClCompile Include="openxr.cpp" />
-    <ClCompile Include="ovr.cpp" />
     <ClCompile Include="rendering.cpp" />
-    <ClCompile Include="steamvr.cpp" />
+    <ClCompile Include="vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="memory.h" />
     <ClInclude Include="layer.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="shader.h" />
     <ClInclude Include="vk_layer_dispatch_table.h" />
   </ItemGroup>
   <ItemGroup>
