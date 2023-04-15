@@ -39,6 +39,8 @@ private:
         m_logger = std::make_unique<Log>();
 
         XR = std::make_unique<OpenXR>();
+
+        Hooks = std::make_unique<CemuHooks>();
     };
 
     ~VRManager() {
