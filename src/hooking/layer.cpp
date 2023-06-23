@@ -175,7 +175,6 @@ void VRLayer::VkDeviceOverrides::DestroyDevice(const vkroots::VkDeviceDispatch* 
     return pDispatch->DestroyDevice(device, pAllocator);
 }
 
-
 VKROOTS_DEFINE_LAYER_INTERFACES(VRLayer::VkInstanceOverrides, VRLayer::VkPhysicalDeviceOverrides, VRLayer::VkDeviceOverrides);
 
 

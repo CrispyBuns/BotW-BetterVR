@@ -1,6 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="BetterVR_Layer" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="-g &quot;G:\WiiU\Games\Breath Of The Wild\code\U-King.rpx&quot;" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="true" WORKING_DIR="file://$PROJECT_DIR$/Cemu" PASS_PARENT_ENVS_2="true" PROJECT_NAME="BetterVR_Layer" TARGET_NAME="BetterVR_Layer" CONFIG_NAME="Debug-Visual Studio" RUN_PATH="$PROJECT_DIR$/Cemu/Cemu.exe">
     <envs>
+      <env name="ENABLE_VULKAN_RENDERDOC_CAPTURE" value="0" />
       <env name="VK_INSTANCE_LAYERS" value="VK_LAYER_BetterVR_Layer" />
       <env name="VK_LAYER_PATH" value=".\;" />
       <env name="VK_LOADER_DEBUG" value="error" />

@@ -127,10 +127,6 @@ OpenXR::~OpenXR() {
         xrDestroySession(m_session);
     }
 
-    for (auto& swapchain : m_swapchains) {
-        swapchain.reset();
-    }
-
     if (m_debugMessengerHandle != XR_NULL_HANDLE) {
         func_xrDestroyDebugUtilsMessengerEXT(m_debugMessengerHandle);
     }
@@ -164,12 +160,6 @@ void OpenXR::CreateSession(const XrGraphicsBindingD3D12KHR& d3d12Binding) {
     sessionCreateInfo.next = &d3d12Binding;
     sessionCreateInfo.createFlags = 0;
     checkXRResult(xrCreateSession(m_instance, &sessionCreateInfo, &m_session), "Failed to create Vulkan-based OpenXR session!");
-
-    auto viewConfs = GetViewConfigurations();
-    // note: it's possible to make a swapchain that matches Cemu's internal resolution and let the headset downsample it, although I doubt there's a benefit
-    this->m_swapchains[EyeSide::LEFT] = std::make_unique<Swapchain>(viewConfs[0].recommendedImageRectWidth, viewConfs[0].recommendedImageRectHeight, viewConfs[0].recommendedSwapchainSampleCount);
-    this->m_swapchains[EyeSide::RIGHT] = std::make_unique<Swapchain>(viewConfs[1].recommendedImageRectWidth, viewConfs[1].recommendedImageRectHeight, viewConfs[1].recommendedSwapchainSampleCount);
-
 
     Log::print("Creating the OpenXR spaces...");
     constexpr XrPosef xrIdentityPose = { .orientation = { .x = 0, .y = 0, .z = 0, .w = 1 }, .position = { .x = 0, .y = 0, .z = 0 } };

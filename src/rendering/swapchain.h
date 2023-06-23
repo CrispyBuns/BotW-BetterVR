@@ -1,5 +1,6 @@
 #pragma once
 
+template <DXGI_FORMAT T>
 class Swapchain {
 public:
     Swapchain(uint32_t width, uint32_t height, uint32_t sampleCount);
@@ -12,9 +13,9 @@ public:
     XrSwapchain GetHandle() { return m_swapchain; };
     ID3D12Resource* GetTexture() { return m_swapchainTextures[m_swapchainImageIdx].Get(); };
 
-    DXGI_FORMAT GetFormat() { return DXGI_FORMAT_R8G8B8A8_UNORM; };
-    uint32_t GetWidth() const { return m_width; };
-    uint32_t GetHeight() const { return m_height; };
+    DXGI_FORMAT GetFormat() { return m_format; };
+    [[nodiscard]] uint32_t GetWidth() const { return m_width; };
+    [[nodiscard]] uint32_t GetHeight() const { return m_height; };
 
 private:
     XrSwapchain m_swapchain = XR_NULL_HANDLE;
@@ -24,6 +25,4 @@ private:
 
     std::vector<ComPtr<ID3D12Resource>> m_swapchainTextures;
     uint32_t m_swapchainImageIdx = 0;
-
-    ComPtr<ID3D12DescriptorHeap> m_colorTarget;
 };

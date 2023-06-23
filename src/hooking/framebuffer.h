@@ -13,7 +13,7 @@ struct CaptureTexture {
     std::array<std::unique_ptr<SharedTexture>, 2> sharedTextures = { nullptr, nullptr };
 
     // current frame state
-    std::atomic<VkCommandBuffer> captureCmdBuffer = VK_NULL_HANDLE;
+    VkCommandBuffer captureCmdBuffer = VK_NULL_HANDLE;
 };
 
-extern std::array<CaptureTexture, 1> captureTextures;
+extern std::array<CaptureTexture, 2> captureTextures;

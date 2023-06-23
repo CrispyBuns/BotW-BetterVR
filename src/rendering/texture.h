@@ -13,8 +13,10 @@ public:
     bool CopyFromSharedTexture(ID3D12GraphicsCommandList* cmdList, SharedTexture* texture);
 
     ID3D12Resource* d3d12GetTexture() const { return m_d3d12Texture.Get(); }
+    DXGI_FORMAT d3d12GetFormat() const { return m_d3d12Format; }
 
 protected:
+    DXGI_FORMAT m_d3d12Format;
     HANDLE m_d3d12TextureHandle = nullptr;
     ComPtr<ID3D12Resource> m_d3d12Texture;
     D3D12_RESOURCE_STATES m_currState = D3D12_RESOURCE_STATE_COMMON;

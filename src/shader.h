@@ -1,4 +1,4 @@
-constexpr char presentHLSL[] = R"_(
+constexpr char presentHLSL[] = R"hlsl(
 struct VSInput {
     uint instId : SV_InstanceID;
     uint vertexId : SV_VertexID;
@@ -9,6 +9,11 @@ struct PSInput {
     float2 uv : TEXCOORD;
 };
 
+struct PSOutput {
+    float4 Color : SV_TARGET;
+    float Depth : SV_DEPTH;
+};
+
 cbuffer g_settings : register(b1) {
     float renderWidth;
     float renderHeight;
@@ -16,7 +21,8 @@ cbuffer g_settings : register(b1) {
     float swapchainHeight;
 };
 
-Texture2D g_texture : register(t0);
+Texture2D g_colorTexture : register(t0);
+Texture2D<float> g_depthTexture : register(t1);
 SamplerState g_sampler : register(s0);
 
 PSInput VSMain(VSInput input) {
@@ -29,15 +35,19 @@ PSInput VSMain(VSInput input) {
 	return output;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET {
+PSOutput PSMain(PSInput input) {
 	float4 renderColor = float4(0.0, 1.0, 1.0, 1.0);
 	float2 samplePosition = input.uv;
 
-    float4 sampledTexture = g_texture.Sample(g_sampler, samplePosition);
-	
-	return float4(sampledTexture.x, sampledTexture.y, sampledTexture.z, 1.0);
+    float4 colorTexture = g_colorTexture.Sample(g_sampler, samplePosition);
+    float depthTexture = g_depthTexture.Sample(g_sampler, samplePosition);
+
+    PSOutput output;
+	output.Color = float4(colorTexture.x, colorTexture.y, colorTexture.z, 1.0f);
+    output.Depth = depthTexture;
+    return output;
 }
-)_";
+)hlsl";
 
 
 struct presentSettings {

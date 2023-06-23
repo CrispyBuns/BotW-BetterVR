@@ -1,5 +1,7 @@
 #pragma once
 
+#include "openxr.h"
+
 class RND_D3D12 {
     friend class RND_Renderer;
 
@@ -31,20 +33,22 @@ public:
     ID3D12CommandAllocator* GetFrameAllocator() { return m_allocator.Get(); };
 
     // todo: extract most to a base pipeline class if other pipelines are needed
+    template <bool depth>
     class PresentPipeline {
         friend class Texture;
 
     public:
-        PresentPipeline();
+        PresentPipeline(RND_Renderer* pRenderer);
         ~PresentPipeline();
 
         void BindAttachment(uint32_t attachmentIdx, ID3D12Resource* srcTexture, DXGI_FORMAT overwriteFormat = DXGI_FORMAT_UNKNOWN);
         void BindTarget(uint32_t targetIdx, ID3D12Resource* dstTexture, DXGI_FORMAT overwriteFormat = DXGI_FORMAT_UNKNOWN);
+        void BindDepthTarget(ID3D12Resource* dstTexture, DXGI_FORMAT overwriteFormat);
         void BindSettings(float screenWidth, float screenHeight);
         void Render(ID3D12GraphicsCommandList* commandList, ID3D12Resource* swapchain);
 
     private:
-        void RecreatePipeline(uint32_t targetIdx, DXGI_FORMAT targetFormat);
+        void RecreatePipeline();
 
         ComPtr<ID3DBlob> m_vertexShader;
         ComPtr<ID3DBlob> m_pixelShader;
@@ -57,11 +61,13 @@ public:
         ComPtr<ID3D12RootSignature> m_signature;
         ComPtr<ID3D12PipelineState> m_pipelineState;
 
-        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 1> m_attachmentHandles = {};
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, depth ? 2 : 1> m_attachmentHandles = {};
         std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 1> m_targetHandles = {};
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, depth ? 1 : 0> m_depthTargetHandles = { };
         ComPtr<ID3D12DescriptorHeap> m_attachmentHeap;
         ComPtr<ID3D12DescriptorHeap> m_targetHeap;
-        std::array<DXGI_FORMAT, 1> m_targetFormats = { DXGI_FORMAT_UNKNOWN };
+        ComPtr<ID3D12DescriptorHeap> m_depthHeap;
+        std::array<DXGI_FORMAT, 2> m_targetFormats = { DXGI_FORMAT_UNKNOWN, DXGI_FORMAT_D32_FLOAT };
     };
 
     template <bool blockTillExecuted>
@@ -110,8 +116,6 @@ private:
     ComPtr<ID3D12CommandQueue> m_queue;
     ComPtr<ID3D12CommandAllocator> m_allocator;
     ComPtr<ID3D12Fence> m_fence;
-
-    std::vector<std::unique_ptr<PresentPipeline>> m_pipelines;
 
     //ComPtr<ID3D12Fence> m_fence;
     //HANDLE m_fenceEvent;

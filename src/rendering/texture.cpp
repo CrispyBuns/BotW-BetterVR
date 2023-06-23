@@ -1,7 +1,8 @@
 #include "texture.h"
 #include "instance.h"
+#include "../utils/d3d12_utils.h"
 
-Texture::Texture(uint32_t width, uint32_t height, DXGI_FORMAT format) {
+Texture::Texture(uint32_t width, uint32_t height, DXGI_FORMAT format): m_d3d12Format(format) {
     // clang-format off
     D3D12_RESOURCE_DESC textureDesc = {
         .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
@@ -16,7 +17,7 @@ Texture::Texture(uint32_t width, uint32_t height, DXGI_FORMAT format) {
             .Quality = 0
         },
         .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
-        .Flags = D3D12_RESOURCE_FLAG_NONE
+        .Flags = D3D12Utils::IsDepthFormat(format) ? D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL : D3D12_RESOURCE_FLAG_NONE
     };
     // clang-format on
 
@@ -92,7 +93,7 @@ SharedTexture::SharedTexture(uint32_t width, uint32_t height, VkFormat vkFormat,
     imageCreateInfo.arrayLayers = 1;
     imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageCreateInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imageCreateInfo.usage = (D3D12Utils::IsDepthFormat(d3d12Format) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageCreateInfo.queueFamilyIndexCount = 0;
     imageCreateInfo.pQueueFamilyIndices = nullptr;
@@ -178,9 +179,9 @@ void SharedTexture::vkTransitionLayout(VkCommandBuffer cmdBuffer, VkImageLayout 
 
 void SharedTexture::CopyFromVkImage(VkCommandBuffer cmdBuffer, VkImage srcImage) {
     VkImageCopy copyRegion = {
-        .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+        .srcSubresource = { (VkImageAspectFlags)(D3D12Utils::IsDepthFormat(this->d3d12GetTexture()->GetDesc().Format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, 0, 1 },
         .srcOffset = { 0, 0, 0 },
-        .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+        .dstSubresource = { (VkImageAspectFlags)(D3D12Utils::IsDepthFormat(this->d3d12GetTexture()->GetDesc().Format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, 0, 1 },
         .dstOffset = { 0, 0, 0 },
         .extent = { (uint32_t)this->m_d3d12Texture->GetDesc().Width, (uint32_t)this->m_d3d12Texture->GetDesc().Height, 1 }
     };

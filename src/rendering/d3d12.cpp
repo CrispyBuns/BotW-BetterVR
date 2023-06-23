@@ -54,9 +54,9 @@ RND_D3D12::RND_D3D12() {
 
     D3D12_MESSAGE_ID denyIds[] = { D3D12_MESSAGE_ID_REFLECTSHAREDPROPERTIES_INVALIDOBJECT };
     D3D12_INFO_QUEUE_FILTER filter = {};
-    filter.DenyList.NumIDs = std::size(denyIds);
+    filter.DenyList.NumIDs = (UINT)std::size(denyIds);
     filter.DenyList.pIDList = denyIds;
-    filter.AllowList.NumSeverities = std::size(severities);
+    filter.AllowList.NumSeverities = (UINT)std::size(severities);
     filter.AllowList.pSeverityList = severities;
     pInfoQueue->PushStorageFilter(&filter);
 #endif
@@ -71,8 +71,8 @@ RND_D3D12::RND_D3D12() {
 RND_D3D12::~RND_D3D12() {
 }
 
-
-RND_D3D12::PresentPipeline::PresentPipeline() {
+template <bool depth>
+RND_D3D12::PresentPipeline<depth>::PresentPipeline(RND_Renderer* pRenderer) {
     // This needs to know the format of the swapchain images, thus needs to wait until the swapchain images are created
     m_vertexShader = D3D12Utils::CompileShader(presentHLSL, "VSMain", "vs_5_1");
     m_pixelShader = D3D12Utils::CompileShader(presentHLSL, "PSMain", "ps_5_1");
@@ -80,7 +80,7 @@ RND_D3D12::PresentPipeline::PresentPipeline() {
     auto createSignature = [this]() {
         // clang-format off
         D3D12_DESCRIPTOR_RANGE pixelRange[] = {
-            // Input texture
+            // Input textures
             {
                 .RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
                 .NumDescriptors = (UINT)this->m_attachmentHandles.size(),
@@ -94,7 +94,7 @@ RND_D3D12::PresentPipeline::PresentPipeline() {
             {
                 .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                 .DescriptorTable = {
-                    .NumDescriptorRanges = 1,
+                    .NumDescriptorRanges = (UINT)std::size(pixelRange),
                     .pDescriptorRanges = pixelRange
                 },
                 .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL
@@ -145,8 +145,9 @@ RND_D3D12::PresentPipeline::PresentPipeline() {
         return rootSigBlob;
     };
 
-    m_attachmentHeap = D3D12Utils::CreateDescriptorHeap(VRManager::instance().D3D12->GetDevice(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, true, m_targetHandles.size());
-    m_targetHeap = D3D12Utils::CreateDescriptorHeap(VRManager::instance().D3D12->GetDevice(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, false, m_attachmentHandles.size());
+    m_attachmentHeap = D3D12Utils::CreateDescriptorHeap(VRManager::instance().D3D12->GetDevice(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, true, (UINT)m_attachmentHandles.size());
+    m_targetHeap = D3D12Utils::CreateDescriptorHeap(VRManager::instance().D3D12->GetDevice(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, false, (UINT)m_targetHandles.size());
+    m_depthHeap = D3D12Utils::CreateDescriptorHeap(VRManager::instance().D3D12->GetDevice(), D3D12_DESCRIPTOR_HEAP_TYPE_DSV, false, (UINT)m_depthTargetHandles.size());
 
     for (uint32_t i = 0; i < m_attachmentHandles.size(); i++) {
         m_attachmentHandles[i] = m_attachmentHeap->GetCPUDescriptorHandleForHeapStart();
@@ -156,6 +157,11 @@ RND_D3D12::PresentPipeline::PresentPipeline() {
     for (uint32_t i = 0; i < m_targetHandles.size(); i++) {
         m_targetHandles[i] = m_targetHeap->GetCPUDescriptorHandleForHeapStart();
         m_targetHandles[i].ptr += (i * VRManager::instance().D3D12->GetDevice()->GetDescriptorHandleIncrementSize(m_targetHeap->GetDesc().Type));
+    }
+
+    for (uint32_t i = 0; i < m_depthTargetHandles.size(); i++) {
+        m_depthTargetHandles[i] = m_depthHeap->GetCPUDescriptorHandleForHeapStart();
+        m_depthTargetHandles[i].ptr += (i * VRManager::instance().D3D12->GetDevice()->GetDescriptorHandleIncrementSize(m_depthHeap->GetDesc().Type));
     }
 
     m_signature = createSignature();
@@ -187,11 +193,13 @@ RND_D3D12::PresentPipeline::PresentPipeline() {
     }
 }
 
-RND_D3D12::PresentPipeline::~PresentPipeline() {
+template <bool depth>
+RND_D3D12::PresentPipeline<depth>::~PresentPipeline() {
 }
 
 // These change the CPU handles that'll later be used for binding the actual assets
-void RND_D3D12::PresentPipeline::BindAttachment(uint32_t attachmentIdx, ID3D12Resource* srcTexture, DXGI_FORMAT overwriteFormat) {
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::BindAttachment(uint32_t attachmentIdx, ID3D12Resource* srcTexture, DXGI_FORMAT overwriteFormat) {
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = overwriteFormat != DXGI_FORMAT_UNKNOWN ? overwriteFormat : srcTexture->GetDesc().Format;
@@ -200,18 +208,35 @@ void RND_D3D12::PresentPipeline::BindAttachment(uint32_t attachmentIdx, ID3D12Re
     VRManager::instance().D3D12->GetDevice()->CreateShaderResourceView(srcTexture, &srvDesc, m_attachmentHandles[attachmentIdx]);
 }
 
-void RND_D3D12::PresentPipeline::BindTarget(uint32_t targetIdx, ID3D12Resource* dstTexture, DXGI_FORMAT overwriteFormat) {
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::BindTarget(uint32_t targetIdx, ID3D12Resource* dstTexture, DXGI_FORMAT overwriteFormat) {
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
     rtvDesc.Format = overwriteFormat != DXGI_FORMAT_UNKNOWN ? overwriteFormat : dstTexture->GetDesc().Format;
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
     VRManager::instance().D3D12->GetDevice()->CreateRenderTargetView(dstTexture, &rtvDesc, m_targetHandles[targetIdx]);
 
-    if (dstTexture->GetDesc().Format != m_targetFormats[targetIdx]) {
-        RecreatePipeline(targetIdx, overwriteFormat);
+    if (rtvDesc.Format != m_targetFormats[targetIdx]) {
+        m_targetFormats[targetIdx] = rtvDesc.Format;
+        RecreatePipeline();
     }
 }
 
-void RND_D3D12::PresentPipeline::BindSettings(float screenWidth, float screenHeight) {
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::BindDepthTarget(ID3D12Resource* dstTexture, DXGI_FORMAT overwriteFormat) {
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+    dsvDesc.Format = overwriteFormat != DXGI_FORMAT_UNKNOWN ? overwriteFormat : dstTexture->GetDesc().Format;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+    VRManager::instance().D3D12->GetDevice()->CreateDepthStencilView(dstTexture, &dsvDesc, m_depthTargetHandles[0]);
+
+    if (dsvDesc.Format != m_targetFormats.back()) {
+        m_targetFormats.back() = dsvDesc.Format;
+        RecreatePipeline();
+    }
+}
+
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::BindSettings(float screenWidth, float screenHeight) {
     ComPtr<ID3D12Resource> newSettingsStaging;
     ComPtr<ID3D12CommandAllocator> newSettingsAllocator;
     {
@@ -239,9 +264,8 @@ void RND_D3D12::PresentPipeline::BindSettings(float screenWidth, float screenHei
     }
 }
 
-void RND_D3D12::PresentPipeline::RecreatePipeline(uint32_t targetIdx, DXGI_FORMAT targetFormat) {
-    m_targetFormats[targetIdx] = targetFormat;
-
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::RecreatePipeline() {
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
         { "SV_InstanceID", 0, DXGI_FORMAT_R16_UINT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "SV_VertexID", 0, DXGI_FORMAT_R16_UINT, 0, 4, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
@@ -256,7 +280,7 @@ void RND_D3D12::PresentPipeline::RecreatePipeline(uint32_t targetIdx, DXGI_FORMA
         .AlphaToCoverageEnable = false,
         .IndependentBlendEnable = false
     };
-    for (uint32_t i = 0; i < std::size(psoDesc.BlendState.RenderTarget); i++) {
+    for (size_t i = 0; i < std::size(psoDesc.BlendState.RenderTarget); i++) {
         psoDesc.BlendState.RenderTarget[i] = {
             .BlendEnable = false,
 
@@ -288,9 +312,9 @@ void RND_D3D12::PresentPipeline::RecreatePipeline(uint32_t targetIdx, DXGI_FORMA
     };
     // clang-format off
     psoDesc.DepthStencilState = {
-        .DepthEnable = false,
+        .DepthEnable = true,
         .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
-        .DepthFunc = D3D12_COMPARISON_FUNC_LESS,
+        .DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS,
         .StencilEnable = false,
         .StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK,
         .StencilWriteMask = D3D12_DEFAULT_STENCIL_WRITE_MASK,
@@ -305,10 +329,10 @@ void RND_D3D12::PresentPipeline::RecreatePipeline(uint32_t targetIdx, DXGI_FORMA
     psoDesc.IBStripCutValue = D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets = 1;
-    for (uint32_t i = 0; i < m_targetFormats.size(); i++) {
+    for (uint32_t i = 0; i < m_targetHandles.size(); i++) {
         psoDesc.RTVFormats[i] = m_targetFormats[i];
     }
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.DSVFormat = m_targetFormats.back();
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     psoDesc.NodeMask = 0;
@@ -317,7 +341,8 @@ void RND_D3D12::PresentPipeline::RecreatePipeline(uint32_t targetIdx, DXGI_FORMA
     checkHResult(VRManager::instance().D3D12->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)), "Failed to create graphics pipeline state!");
 }
 
-void RND_D3D12::PresentPipeline::Render(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* swapchain) {
+template <bool depth>
+void RND_D3D12::PresentPipeline<depth>::Render(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* swapchain) {
     cmdList->SetPipelineState(m_pipelineState.Get());
     cmdList->SetGraphicsRootSignature(m_signature.Get());
 
@@ -334,13 +359,12 @@ void RND_D3D12::PresentPipeline::Render(ID3D12GraphicsCommandList* cmdList, ID3D
 
     // set shared texture
     ID3D12DescriptorHeap* heaps[] = { m_attachmentHeap.Get() };
-    cmdList->SetDescriptorHeaps(std::size(heaps), heaps);
+    cmdList->SetDescriptorHeaps((UINT)std::size(heaps), heaps);
 
     cmdList->SetGraphicsRootDescriptorTable(0, m_attachmentHeap->GetGPUDescriptorHandleForHeapStart());
 
     // set render target
-    D3D12_CPU_DESCRIPTOR_HANDLE renderTargetViewHandle = m_targetHeap->GetCPUDescriptorHandleForHeapStart();
-    cmdList->OMSetRenderTargets(1, &renderTargetViewHandle, true, nullptr);
+    cmdList->OMSetRenderTargets(1, &m_targetHandles[0], true, depth ? &m_depthTargetHandles[0] : nullptr);
 
     // draw
     //float clearColor[4] = { textureIdx == 0 ? 0.0f, 0.2f, 0.4f, 1.0f : 0.4f, 0.2f, 0.0f, 1.0f };
@@ -348,5 +372,8 @@ void RND_D3D12::PresentPipeline::Render(ID3D12GraphicsCommandList* cmdList, ID3D
 
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmdList->IASetIndexBuffer(&m_screenIndicesView);
-    cmdList->DrawIndexedInstanced(std::size(screenIndices), 1, 0, 0, 0);
+    cmdList->DrawIndexedInstanced((UINT)std::size(screenIndices), 1, 0, 0, 0);
 }
+
+template class RND_D3D12::PresentPipeline<false>;
+template class RND_D3D12::PresentPipeline<true>;
