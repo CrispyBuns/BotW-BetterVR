@@ -1,5 +1,5 @@
-#include "cemu_hooks.h"
 #include "../instance.h"
+#include "cemu_hooks.h"
 
 struct ActorWiiU {
     uint32_t vtable;
@@ -13,13 +13,21 @@ struct ActorWiiU {
     BEMatrix34 homeMtx;
     BEVec3 velocity;
     BEVec3 angularVelocity;
-    BEVec3 scale;
+    BEVec3 scale; // 0x274
+    BEType<float> dispDistSq;
+    BEType<float> deleteDistSq;
+    BEType<float> loadDistP10;
+    BEVec3 previousPos;
+    BEVec3 previousPos2;
+
+    // ActorPhysics *physics is an interesting class, getPhysicsField60
+
+    uint8_t unk_UNKNOWN[0x1C8];
+
+    // todo: insert gap
+    BEType<float> lodDrawDistanceMultiplier; // 0x490
 };
 
-// std::vector<ActorWiiU> s_actors;
-std::vector<uint32_t> s_actorPtrs;
-
-std::unordered_map<uint32_t, std::string> s_actorNames;
 
 static uint32_t stringToHash(const char* str) {
     uint32_t hash = 0;
@@ -29,11 +37,13 @@ static uint32_t stringToHash(const char* str) {
     return hash;
 }
 
-std::unordered_map<uint32_t, std::pair<std::string, uint32_t>> s_currActorHashes;
-std::unordered_map<uint32_t, std::pair<std::string, uint32_t>> s_prevActorHashes;
+std::mutex g_actorListMutex;
+std::unordered_map<uint32_t, std::pair<std::string, uint32_t>> s_knownActors;
 
 void CemuHooks::hook_UpdateActorList(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    std::scoped_lock lock(g_actorListMutex);
 
     // r7 holds actor list size
     // r5 holds current actor index
@@ -41,128 +51,194 @@ void CemuHooks::hook_UpdateActorList(PPCInterpreter_t* hCPU) {
 
     // clear actor list when reiterating actor list again
     if (hCPU->gpr[5] == 0) {
-        //Log::print("Clearing actor list");
-        // s_actors.clear();
-
-        for (auto& actor : s_currActorHashes) {
-            if (s_prevActorHashes.find(actor.first) == s_prevActorHashes.end()) {
-
-                uint32_t actorPtr = actor.second.second + offsetof(ActorWiiU, baseProcPtr);
-                std::string& actorName = actor.second.first;
-
-                if (const auto& overlay = VRManager::instance().VK->m_imguiOverlay) {
-                    BEMatrix34 mtx = {};
-                    readMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
-                    auto var1 = ValueVariant(XrVector3f{ mtx.pos_x.getLE(), mtx.pos_y.getLE(), mtx.pos_z.getLE() });
-                    overlay->AddEntity(actorName, "mtx", actorPtr + offsetof(ActorWiiU, mtx), var1);
-
-                    BEMatrix34 homeMtx = {};
-                    readMemory(actorPtr + offsetof(ActorWiiU, homeMtx), &homeMtx);
-                    auto var2 = ValueVariant(XrVector3f{ homeMtx.pos_x.getLE(), homeMtx.pos_y.getLE(), homeMtx.pos_z.getLE() });
-                    overlay->AddEntity(actorName, "homeMtx", actorPtr + offsetof(ActorWiiU, homeMtx), var2);
-
-                    BEVec3 velocity = {};
-                    readMemory(actorPtr + offsetof(ActorWiiU, velocity), &velocity);
-                    auto var3 = ValueVariant(XrVector3f{ velocity.x.getLE(), velocity.y.getLE(), velocity.z.getLE() });
-                    overlay->AddEntity(actorName, "velocity", actorPtr + offsetof(ActorWiiU, velocity), var3);
-
-                    BEVec3 angularVelocity = {};
-                    readMemory(actorPtr + offsetof(ActorWiiU, angularVelocity), &angularVelocity);
-                    auto var4 = ValueVariant(XrVector3f{ angularVelocity.x.getLE(), angularVelocity.y.getLE(), angularVelocity.z.getLE() });
-                    overlay->AddEntity(actorName, "angularVelocity", actorPtr + offsetof(ActorWiiU, angularVelocity), var4);
-
-                    BEVec3 scale = {};
-                    readMemory(actorPtr + offsetof(ActorWiiU, scale), &scale);
-                    auto var5 = ValueVariant(XrVector3f{ scale.x.getLE(), scale.y.getLE(), scale.z.getLE() });
-                    overlay->AddEntity(actorName, "scale", actorPtr + offsetof(ActorWiiU, scale), var5);
-                }
-
-            }
-        }
-        for (auto& actor : s_prevActorHashes) {
-            if (s_currActorHashes.find(actor.first) == s_currActorHashes.end()) {
-                std::string& actorName = actor.second.first;
-
-                if (const auto& overlay = VRManager::instance().VK->m_imguiOverlay) {
-                    overlay->RemoveEntity(actorName);
-                }
-            }
-        }
-        s_prevActorHashes = s_currActorHashes;
-        s_currActorHashes.clear();
-
-        s_actorPtrs.clear();
+        s_knownActors.clear();
     }
 
-    uint32_t actorPtr = hCPU->gpr[6] + offsetof(ActorWiiU, baseProcPtr);
-    uint32_t actorPtrUnderscore = 0;
-    readMemoryBE(actorPtr, &actorPtrUnderscore);
-    if (actorPtrUnderscore == 0) {
-        //Log::print("Updating actor list [{}/{}] {:08x} - No Name", hCPU->gpr[5], hCPU->gpr[7], hCPU->gpr[6]);
+    uint32_t actorLinkPtr = hCPU->gpr[6] + offsetof(ActorWiiU, baseProcPtr);
+    uint32_t actorNamePtr = 0;
+    readMemoryBE(actorLinkPtr, &actorNamePtr);
+    if (actorNamePtr == 0)
         return;
-    }
 
-    char* actorName = (char*)s_memoryBaseAddress + actorPtrUnderscore;
+    char* actorName = (char*)s_memoryBaseAddress + actorNamePtr;
 
-    if (actorName != nullptr && actorName[0] != '\0') {
-        // s_currActorNames.emplace_back(std::format("{:08x}: ", hCPU->gpr[6])+actorName);
-        std::string formattedId = std::format("{}: {:08x}", actorName, hCPU->gpr[6]);
-        s_currActorHashes.emplace(hCPU->gpr[6]+stringToHash(actorName), std::make_pair(formattedId, hCPU->gpr[6]));
-    }
-
-    if (strcmp(actorName, "Weapon_Sword_056") == 0) {
+    if (actorName[0] != '\0') {
         // Log::print("Updating actor list [{}/{}] {:08x} - {}", hCPU->gpr[5], hCPU->gpr[7], hCPU->gpr[6], actorName);
-        // float velocityY = 0.0f;
-        // readMemoryBE(hCPU->gpr[6] + offsetof(ActorWiiU, velocity.y), &velocityY);
-        // velocityY = velocityY * 1.5f;
-        // writeMemoryBE(hCPU->gpr[6] + offsetof(ActorWiiU, velocity.y), &velocityY);
-        s_actorPtrs.emplace_back(hCPU->gpr[6]);
+        uint32_t actorId = hCPU->gpr[6] + stringToHash(actorName);
+        s_knownActors.emplace(actorId, std::make_pair(actorName, hCPU->gpr[6]));
     }
+
+    // if (strcmp(actorName, "Weapon_Sword_056") == 0) {
+    //     // Log::print("Updating actor list [{}/{}] {:08x} - {}", hCPU->gpr[5], hCPU->gpr[7], hCPU->gpr[6], actorName);
+    //     // float velocityY = 0.0f;
+    //     // readMemoryBE(hCPU->gpr[6] + offsetof(ActorWiiU, velocity.y), &velocityY);
+    //     // velocityY = velocityY * 1.5f;
+    //     // writeMemoryBE(hCPU->gpr[6] + offsetof(ActorWiiU, velocity.y), &velocityY);
+    //     s_currActorPtrs.emplace_back(hCPU->gpr[6]);
+    // }
 }
 
 // ksys::phys::RigidBodyFromShape::create to create a RigidBody from a shape
 // use Actor::getRigidBodyByName
 
-void CemuHooks::updateFrames() {
-    for (uint32_t actorPtr : s_actorPtrs) {
-        uint32_t actorPhysicsMtx = 0;
-        readMemory(actorPtr + offsetof(ActorWiiU, physicsMtxPtr), &actorPhysicsMtx);
-        if (actorPhysicsMtx != 0) {
-            // Matrix34 physicsMtx = {};
-            // readMemoryBE(actorPhysicsMtx, &physicsMtx);
-            // float posX = physicsMtx.pos_x;
-            // float posY = physicsMtx.pos_y;
-            // float posZ = physicsMtx.pos_z;
-            //
-            // float newPosX = posX + 20.0f;
-            // float newPosY = posY + 20.0f;
-            // float newPosZ = posZ + 20.0f;
-            // physicsMtx.pos_x = newPosX;
-            // physicsMtx.pos_y = newPosY;
-            // physicsMtx.pos_z = newPosZ;
-            // Matrix34 backupMtx = physicsMtx;
-            // writeMemoryBE(actorPhysicsMtx, &physicsMtx);
+std::unordered_map<uint32_t, std::pair<std::string, uint32_t>> s_alreadyAddedActors;
 
-            // Log::print("This actor has physics?!");
+void CemuHooks::updateFrames() {
+    auto& overlay = VRManager::instance().VK->m_imguiOverlay;
+
+    std::scoped_lock lock(g_actorListMutex);
+
+    if (overlay) {
+        // remove actors in s_alreadyAddedActors that are no longer in s_knownActors
+        for (const auto& hash : s_alreadyAddedActors | std::views::keys) {
+            if (!s_knownActors.contains(hash)) {
+                overlay->RemoveEntity(hash);
+            }
         }
 
-        // BEMatrix34 mtx = {};
-        // readMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
-        //
-        // float posX = mtx.pos_x.getLE();
-        // float posY = mtx.pos_y.getLE();
-        // float posZ = mtx.pos_z.getLE();
-        //
-        // float newPosX = posX + 20.0f;
-        // float newPosY = posY + 20.0f;
-        // float newPosZ = posZ + 20.0f;
-        // mtx.pos_x = newPosX;
-        // mtx.pos_y = newPosY;
-        // mtx.pos_z = newPosZ;
-        // writeMemory(actorPtr + offsetof(ActorWiiU, homeMtx), &mtx);
-        // writeMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
-        // Log::print("Updating actor list {:08x} currX={} (address = {:08x}), currY={} (address = {:08x}), currZ={} (address = {:08x}) -> newX={}, newY={}, newZ={}", actorPtr, posX, actorPtr + offsetof(ActorWiiU, mtx.pos_x), posY, actorPtr + offsetof(ActorWiiU, mtx.pos_y), posZ, actorPtr + offsetof(ActorWiiU, mtx.pos_z), newPosX, newPosY, newPosZ);
+        s_alreadyAddedActors = s_knownActors;
+
+        // find current player (GameROMPlayer)
+        BEMatrix34 playerPos = {};
+        for (const auto& [actorId, actorData] : s_knownActors) {
+            if (actorData.first == "GameROMPlayer") {
+                readMemory(actorData.second + offsetof(ActorWiiU, mtx), &playerPos);
+                break;
+            }
+        }
+
+        // add actors that aren't in the overlay already
+        for (auto& [actorId, actorInfo] : s_knownActors) {
+            uint32_t actorPtr = actorInfo.second;
+            const std::string& actorName = actorInfo.first;
+
+            BEMatrix34 mtx = {};
+            BEMatrix34 homeMtx = {};
+            BEVec3 velocity = {};
+            BEVec3 angularVelocity = {};
+
+            readMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
+            readMemory(actorPtr + offsetof(ActorWiiU, homeMtx), &homeMtx);
+            readMemory(actorPtr + offsetof(ActorWiiU, velocity), &velocity);
+            readMemory(actorPtr + offsetof(ActorWiiU, angularVelocity), &angularVelocity);
+
+            if (playerPos.pos_x.getLE() != 0.0f) {
+                overlay->SetPriority(actorId, playerPos.DistanceSq(mtx));
+            }
+
+            overlay->AddOrUpdateEntity(actorId, actorName, "mtx", actorPtr + offsetof(ActorWiiU, mtx), mtx);
+            overlay->AddOrUpdateEntity(actorId, actorName, "homeMtx", actorPtr + offsetof(ActorWiiU, homeMtx), homeMtx);
+
+            uint32_t physicsMtxPtr = 0;
+            if (readMemoryBE(actorPtr + offsetof(ActorWiiU, physicsMtxPtr), &physicsMtxPtr); physicsMtxPtr != 0) {
+                BEMatrix34 physicsMtx = {};
+                readMemory(physicsMtxPtr, &physicsMtx);
+                overlay->AddOrUpdateEntity(actorId, actorName, "physicsMtx", actorPtr + offsetof(ActorWiiU, physicsMtxPtr), physicsMtx);
+            }
+            overlay->AddOrUpdateEntity(actorId, actorName, "velocity", actorPtr + offsetof(ActorWiiU, velocity), velocity);
+            overlay->AddOrUpdateEntity(actorId, actorName, "angularVelocity", actorPtr + offsetof(ActorWiiU, angularVelocity), angularVelocity);
+            overlay->AddOrUpdateEntity(actorId, actorName, "scale", actorPtr + offsetof(ActorWiiU, scale), getMemory<BEVec3>(actorPtr + offsetof(ActorWiiU, scale)));
+            // overlay->AddOrUpdateEntity(actorId, actorName, "previousPos", actorPtr + offsetof(ActorWiiU, previousPos), getMemory<BEVec3>(actorPtr + offsetof(ActorWiiU, previousPos)));
+            // overlay->AddOrUpdateEntity(actorId, actorName, "previousPos2", actorPtr + offsetof(ActorWiiU, previousPos2), getMemory<BEVec3>(actorPtr + offsetof(ActorWiiU, previousPos2)));
+            // overlay->AddOrUpdateEntity(actorId, actorName, "dispDistSq", actorPtr + offsetof(ActorWiiU, dispDistSq), getMemory<float>(actorPtr + offsetof(ActorWiiU, dispDistSq)));
+            // overlay->AddOrUpdateEntity(actorId, actorName, "deleteDistSq", actorPtr + offsetof(ActorWiiU, deleteDistSq), getMemory<float>(actorPtr + offsetof(ActorWiiU, deleteDistSq)));
+            // overlay->AddOrUpdateEntity(actorId, actorName, "loadDistP10", actorPtr + offsetof(ActorWiiU, loadDistP10), getMemory<float>(actorPtr + offsetof(ActorWiiU, loadDistP10)));
+            overlay->AddOrUpdateEntity(actorId, actorName, "lodDrawDistanceMultiplier", actorPtr + offsetof(ActorWiiU, lodDrawDistanceMultiplier), getMemory<float>(actorPtr + offsetof(ActorWiiU, lodDrawDistanceMultiplier)));
+        }
+
+        // other systems might've added memory to the overlay, so hence this is a separate loop
+        for (auto& entity : VRManager::instance().VK->m_imguiOverlay->m_entities | std::views::values) {
+            for (auto& value : entity.values) {
+                if (!value.frozen)
+                    continue;
+
+                // Log::print("Freezing value {} from {}...", value.value_name, entity.name);
+                std::visit([&](auto&& arg) {
+                    using T = std::decay_t<decltype(arg)>;
+                    if constexpr (std::is_same_v<T, BEType<uint32_t>>) {
+                        writeMemory(value.value_address, &arg);
+                    }
+                    else if constexpr (std::is_same_v<T, BEType<int32_t>>) {
+                        writeMemory(value.value_address, &arg);
+                    }
+                    else if constexpr (std::is_same_v<T, BEType<float>>) {
+                        writeMemory(value.value_address, &arg);
+                    }
+                    else if constexpr (std::is_same_v<T, BEVec3>) {
+                        writeMemory(value.value_address, &arg);
+                    }
+                    else if constexpr (std::is_same_v<T, BEMatrix34>) {
+                        writeMemory(value.value_address, &arg);
+                    }
+                }, value.value);
+            }
+        }
     }
+
+
+    // for (uint32_t actorPtr : s_currActorPtrs) {
+    //     // uint32_t actorPhysicsMtx = 0;
+    //     // readMemory(actorPtr + offsetof(ActorWiiU, physicsMtxPtr), &actorPhysicsMtx);
+    //     // if (actorPhysicsMtx != 0) {
+    //     //     // Matrix34 physicsMtx = {};
+    //     //     // readMemoryBE(actorPhysicsMtx, &physicsMtx);
+    //     //     // float posX = physicsMtx.pos_x;
+    //     //     // float posY = physicsMtx.pos_y;
+    //     //     // float posZ = physicsMtx.pos_z;
+    //     //     //
+    //     //     // float newPosX = posX + 20.0f;
+    //     //     // float newPosY = posY + 20.0f;
+    //     //     // float newPosZ = posZ + 20.0f;
+    //     //     // physicsMtx.pos_x = newPosX;
+    //     //     // physicsMtx.pos_y = newPosY;
+    //     //     // physicsMtx.pos_z = newPosZ;
+    //     //     // Matrix34 backupMtx = physicsMtx;
+    //     //     // writeMemoryBE(actorPhysicsMtx, &physicsMtx);
+    //     //
+    //     //     // Log::print("This actor has physics?!");
+    //     // }
+    //     //
+    //     // BEMatrix34 mtx = {};
+    //     // readMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
+    //     //
+    //     // float posX = mtx.pos_x.getLE();
+    //     // float posY = mtx.pos_y.getLE();
+    //     // float posZ = mtx.pos_z.getLE();
+    //     //
+    //     // float newPosX = posX + 20.0f;
+    //     // float newPosY = posY + 20.0f;
+    //     // float newPosZ = posZ + 20.0f;
+    //     // mtx.pos_x = newPosX;
+    //     // mtx.pos_y = newPosY;
+    //     // mtx.pos_z = newPosZ;
+    //     // writeMemory(actorPtr + offsetof(ActorWiiU, homeMtx), &mtx);
+    //     // writeMemory(actorPtr + offsetof(ActorWiiU, mtx), &mtx);
+    //     // Log::print("Updating actor list {:08x} currX={} (address = {:08x}), currY={} (address = {:08x}), currZ={} (address = {:08x}) -> newX={}, newY={}, newZ={}", actorPtr, posX, actorPtr + offsetof(ActorWiiU, mtx.pos_x), posY, actorPtr + offsetof(ActorWiiU, mtx.pos_y), posZ, actorPtr + offsetof(ActorWiiU, mtx.pos_z), newPosX, newPosY, newPosZ);
+    // }
+
+}
+
+void CemuHooks::hook_modifyHandModelAccessSearch(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    // if (hCPU->gpr[3]) {
+    //     return;
+    // }
+    //
+    // uint32_t actorLinkPtr = hCPU->gpr[3];
+    // uint32_t actorNamePtr = 0;
+    // readMemoryBE(actorLinkPtr, &actorNamePtr);
+    // if (actorNamePtr == 0)
+    //     return;
+    //
+    //
+    // // r3 holds the address of the string to search for
+    // const char* actorName = (const char*)(s_memoryBaseAddress + actorNamePtr);
+    //
+    // if (actorName != nullptr) {
+    //     Log::print("Searching for model handle using {}", actorName);
+    // }
+
 }
 
 void CemuHooks::hook_CreateNewActor(PPCInterpreter_t* hCPU) {

@@ -180,6 +180,8 @@ RND_Vulkan::ImGuiOverlay::ImGuiOverlay(VkCommandBuffer cb, uint32_t width, uint3
     samplerInfo.minLod = -1000.0f;
     samplerInfo.maxLod = 1000.0f;
     checkVkResult(VRManager::instance().VK->GetDeviceDispatch()->CreateSampler(VRManager::instance().VK->GetDevice(), &samplerInfo, nullptr, &m_sampler), "Failed to create sampler for ImGui");
+
+    m_filter.resize(256);
 }
 
 RND_Vulkan::ImGuiOverlay::~ImGuiOverlay() {
@@ -266,36 +268,86 @@ void RND_Vulkan::ImGuiOverlay::BeginFrame() {
 
     ImGui::Begin("Entity Inspector");
 
-    // ImGui::BeginListBox("Entities");
-    for (auto& [entity, values] : m_entities) {
-        ImGui::Text(entity.c_str());
-        ImGui::PushID(entity.c_str());
+    static char buf[256];
+    ImGui::InputText("Filter", buf, std::size(buf));
+    m_filter = toLower(buf);
 
-        // ImGui::BeginGroup();
-        for (auto& value : values) {
-            // ImGui::InputInt("Address", (int*)&value.value_address);
-            std::visit([&](auto&& arg) {
-                using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, uint32_t>) {
-                    ImGui::InputInt(value.value_name.c_str(), (int*)&arg);
+    // sort m_entities by priority
+    std::multimap<float, std::reference_wrapper<Entity>> sortedEntities;
+    for (auto& entity : m_entities | std::views::values) {
+        if (m_filter.empty() || entity.lowerName.find(m_filter) != std::string::npos) {
+            bool isAnyValueFrozen = std::ranges::any_of(entity.values, [](auto& value) { return value.frozen; });
+            // give priority to frozen entities
+            sortedEntities.emplace(isAnyValueFrozen ? 0.0f - entity.priority : entity.priority, entity);
+        }
+    }
+
+    // display entities
+    ImGui::BeginChild("Entity List", ImVec2(0, 0), 0, 0);
+    for (auto& [_, entity] : sortedEntities) {
+        std::string id = entity.get().name + "##" + std::to_string(entity.get().values[0].value_address);
+        ImGui::Text(std::format("{}: dist={}", entity.get().name, std::abs(entity.get().priority)).c_str());
+        ImGui::PushID(id.c_str());
+
+        for (auto& value : entity.get().values) {
+            ImGui::Checkbox(("##Frozen_"+value.value_name).c_str(), &value.frozen);
+            ImGui::SameLine();
+            if (ImGui::Button(("Copy##"+value.value_name).c_str())) {
+                ImGui::SetClipboardText(std::format("0x{:08x}", value.value_address).c_str());
+            }
+            ImGui::SameLine();
+
+            ImGui::BeginDisabled(!value.frozen);
+
+            std::visit([&]<typename T0>(T0&& arg) {
+                using T = std::decay_t<T0>;
+
+                if constexpr (std::is_same_v<T, BEType<uint32_t>>) {
+                    uint32_t val = std::get<BEType<uint32_t>>(value.value).getLE();
+                    if (ImGui::DragScalar(("##"+value.value_name).c_str(), ImGuiDataType_U32, &val)) {
+                        std::get<BEType<uint32_t>>(value.value) = val;
+                    }
                 }
-                else if constexpr (std::is_same_v<T, float>) {
-                    ImGui::InputFloat(value.value_name.c_str(), &arg);
+                else if constexpr (std::is_same_v<T, BEType<int32_t>>) {
+                    int32_t val = std::get<BEType<int32_t>>(value.value).getLE();
+                    if (ImGui::DragScalar(value.value_name.c_str(), ImGuiDataType_S32, &val)) {
+                        std::get<BEType<int32_t>>(value.value) = val;
+                    }
                 }
-                else if constexpr (std::is_same_v<T, XrVector3f>) {
-                    ImGui::InputFloat3(value.value_name.c_str(), &arg.x);
+                else if constexpr (std::is_same_v<T, BEType<float>>) {
+                    float val = std::get<BEType<float>>(value.value).getLE();
+                    if (ImGui::DragScalar(value.value_name.c_str(), ImGuiDataType_Float, &val)) {
+                        std::get<BEType<float>>(value.value) = val;
+                    }
+                }
+                else if constexpr (std::is_same_v<T, BEVec3>) {
+                    float xyz[3] = { std::get<BEVec3>(value.value).x.getLE(), std::get<BEVec3>(value.value).y.getLE(), std::get<BEVec3>(value.value).z.getLE() };
+                    if (ImGui::DragFloat3(value.value_name.c_str(), xyz)) {
+                        std::get<BEVec3>(value.value).x = xyz[0];
+                        std::get<BEVec3>(value.value).y = xyz[1];
+                        std::get<BEVec3>(value.value).z = xyz[2];
+                    }
+                }
+                else if constexpr (std::is_same_v<T, BEMatrix34>) {
+                    float xyz[3] = { std::get<BEMatrix34>(value.value).pos_x.getLE(), std::get<BEMatrix34>(value.value).pos_y.getLE(), std::get<BEMatrix34>(value.value).pos_z.getLE() };
+                    if (ImGui::DragFloat3(value.value_name.c_str(), xyz)) {
+                        std::get<BEMatrix34>(value.value).pos_x = xyz[0];
+                        std::get<BEMatrix34>(value.value).pos_y = xyz[1];
+                        std::get<BEMatrix34>(value.value).pos_z = xyz[2];
+                    }
                 }
                 else if constexpr (std::is_same_v<T, std::string>) {
-                    ImGui::Text(value.value_name.c_str());
+                    std::string val = std::get<std::string>(value.value);
+                    ImGui::Text( val.c_str());
                 }
             }, value.value);
-        }
-        // ImGui::EndGroup();
-        ImGui::PopID();
 
-        ImGui::Separator();
+            ImGui::EndDisabled();
+        }
+
+        ImGui::PopID();
     }
-    // ImGui::EndListBox();
+    ImGui::EndChild();
 
     ImGui::End();
 }
@@ -361,6 +413,32 @@ void RND_Vulkan::ImGuiOverlay::DrawOverlayToImage(VkCommandBuffer cb, VkImage de
         m_framebufferIdx = 0;
 }
 
+bool s_isLeftMouseButtonPressed = false;
+bool s_isRightMouseButtonPressed = false;
+bool s_isMiddleMouseButtonPressed = false;
+std::array<bool, 256> s_pressedKeyState = {};
+std::array<bool, ImGuiKey_NamedKey_COUNT> s_pressedNamedKeyState = {};
+
+#define IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN(key, isShiftPressed) { \
+    bool isKeyDown = GetAsyncKeyState(key) & 0x8000; \
+    bool wasKeyDown = s_pressedKeyState[key]; \
+    s_pressedKeyState[key] = isKeyDown; \
+    if (isKeyDown && !wasKeyDown) { \
+        ImGui::GetIO().AddInputCharacter(isShiftPressed ? key : tolower(key)); \
+    } \
+}
+
+#define IS_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN(key, imGuiKey) { \
+    bool wasKeyDown = s_pressedNamedKeyState[imGuiKey - ImGuiKey_NamedKey_BEGIN]; \
+    bool isKeyDown = GetAsyncKeyState(key) & 0x8000; \
+    s_pressedNamedKeyState[imGuiKey - ImGuiKey_NamedKey_BEGIN] = isKeyDown; \
+    if (isKeyDown && !wasKeyDown) { \
+        ImGui::GetIO().AddKeyEvent(imGuiKey, true); \
+    } \
+    else if (!isKeyDown && wasKeyDown) { \
+        ImGui::GetIO().AddKeyEvent(imGuiKey, false); \
+    } \
+}
 
 void RND_Vulkan::ImGuiOverlay::UpdateControls() {
     POINT p;
@@ -400,29 +478,106 @@ void RND_Vulkan::ImGuiOverlay::UpdateControls() {
 
     // update mouse state depending on if the window is focused
     if (GetForegroundWindow() != m_cemuTopWindow) {
-        ImGui::GetIO().MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
-        ImGui::GetIO().MouseDown[0] = false;
-        ImGui::GetIO().MouseDown[1] = false;
-        ImGui::GetIO().MouseDown[2] = false;
+        ImGui::GetIO().ClearInputMouse();
+        ImGui::GetIO().ClearInputCharacters();
+        ImGui::GetIO().ClearInputKeys();
     }
     else {
-        ImGui::GetIO().MousePos = ImVec2((float)p.x, (float)p.y);
-        ImGui::GetIO().MouseDown[0] = GetAsyncKeyState(VK_LBUTTON) & 0x8000;
-        ImGui::GetIO().MouseDown[1] = GetAsyncKeyState(VK_RBUTTON) & 0x8000;
-        ImGui::GetIO().MouseDown[2] = GetAsyncKeyState(VK_MBUTTON) & 0x8000;
+        ImGui::GetIO().AddMouseButtonEvent(0, GetAsyncKeyState(VK_LBUTTON) & 0x8000);
+        ImGui::GetIO().AddMouseButtonEvent(1, GetAsyncKeyState(VK_RBUTTON) & 0x8000);
+        ImGui::GetIO().AddMouseButtonEvent(2, GetAsyncKeyState(VK_MBUTTON) & 0x8000);
+        ImGui::GetIO().AddMousePosEvent(p.x, p.y);
+
+        // capture keyboard input
+        ImGui::GetIO().KeyAlt = GetAsyncKeyState(VK_MENU) & 0x8000;
+        ImGui::GetIO().KeyCtrl = GetAsyncKeyState(VK_CONTROL) & 0x8000;
+        ImGui::GetIO().KeyShift = GetAsyncKeyState(VK_SHIFT) & 0x8000;
+        ImGui::GetIO().KeySuper = GetAsyncKeyState(VK_LWIN) & 0x8000;
+
+        // get asciinum from key state
+        bool isShift = GetAsyncKeyState(VK_SHIFT) & 0x8000;
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN(' ', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('0', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('1', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('2', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('3', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('4', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('5', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('6', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('7', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('8', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('9', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('A', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('B', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('C', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('D', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('E', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('F', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('G', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('H', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('I', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('J', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('K', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('L', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('M', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('N', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('O', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('P', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('R', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('Q', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('S', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('T', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('U', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('V', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('W', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('X', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('Y', isShift);
+        IS_ALPHANUMERIC_KEY_DOWN_AND_WASNT_PREVIOUSLY_DOWN('Z', isShift);
+
+        // check underscore
+        bool isKeyDown = GetAsyncKeyState(VK_OEM_MINUS) & 0x8000;
+        bool wasKeyDown = s_pressedKeyState[VK_OEM_MINUS];
+        s_pressedKeyState[VK_OEM_MINUS] = isKeyDown;
+        if (isKeyDown && !wasKeyDown) {
+            ImGui::GetIO().AddInputCharacter(isShift ? '_' : '-');
+        }
+
+        // check backspace
+        bool isBackspaceKeyDown = GetAsyncKeyState(VK_BACK) & 0x8000;
+        bool wasBackspaceKeyDown = s_pressedKeyState[VK_BACK];
+        s_pressedKeyState[VK_BACK] = isBackspaceKeyDown;
+        if (isBackspaceKeyDown && !wasBackspaceKeyDown) {
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_Backspace, true);
+        }
+        else if (!isBackspaceKeyDown && wasBackspaceKeyDown) {
+            ImGui::GetIO().AddKeyEvent(ImGuiKey_Backspace, false);
+        }
     }
 }
 
 // Memory Viewer/Editor
 
-void RND_Vulkan::ImGuiOverlay::AddEntity(std::string entity, std::string name, uint32_t address, ValueVariant& value) {
-    if (m_entities.find(entity) == m_entities.end()) {
-        m_entities[entity] = {};
-    }
+void RND_Vulkan::ImGuiOverlay::AddOrUpdateEntity(uint32_t actorId, const std::string& entityName, const std::string& valueName, uint32_t address, ValueVariant&& value) {
+    const auto& [entityIt, _] = m_entities.try_emplace(actorId, Entity{ entityName, toLower(entityName), 0.0f, {} });
 
-    m_entities[entity].emplace_back(name, address, value);
+    const auto& valueIt = std::ranges::find_if(entityIt->second.values, [&](EntityValue& val) {
+        return val.value_name == valueName;
+    });
+
+    if (valueIt == entityIt->second.values.end()) {
+        entityIt->second.values.emplace_back(valueName, false, address, std::move(value));
+    }
+    else if (!valueIt->frozen) {
+        valueIt->value = std::move(value);
+    }
 }
 
-void RND_Vulkan::ImGuiOverlay::RemoveEntity(std::string entity) {
-    m_entities.erase(entity);
+void RND_Vulkan::ImGuiOverlay::SetPriority(uint32_t actorId, float priority) {
+    if (auto it = m_entities.find(actorId); it != m_entities.end()) {
+        it->second.priority = priority;
+    }
+}
+
+void RND_Vulkan::ImGuiOverlay::RemoveEntity(uint32_t actorId) {
+    m_entities.erase(actorId);
 }

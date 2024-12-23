@@ -5,6 +5,9 @@
 #include <variant>
 #include <functional>
 #include <type_traits>
+#include <ranges>
+#include <set>
+#include <unordered_set>
 
 #include <Windows.h>
 #include <winrt/base.h>
@@ -41,6 +44,18 @@ using Microsoft::WRL::ComPtr;
 
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
+
+
+inline std::string& toLower(std::string str) {
+    std::ranges::transform(str, str.begin(), [](unsigned char c) { return std::tolower(c); });
+    return str;
+}
+
+template<class T, template<class...> class U>
+inline constexpr bool is_instance_of_v = std::false_type{};
+
+template<template<class...> class U, class... Vs>
+inline constexpr bool is_instance_of_v<U<Vs...>,U> = std::true_type{};
 
 template <typename T1, typename T2>
 constexpr bool HAS_FLAG(T1 flags, T2 test_flag) { return (flags & (T1)test_flag) == (T1)test_flag; }
@@ -91,9 +106,11 @@ inline T swapEndianness(T val) {
     }
 }
 
+struct BETypeCompatible {
+};
+
 template<typename T>
-class BEType {
-public:
+struct BEType : BETypeCompatible {
     T val;
 
     BEType() = default;
@@ -148,7 +165,11 @@ public:
     friend bool operator >=(const T& lhs, const BEType<T>& rhs) { return lhs >= swapEndianness(rhs.val); }
 };
 
-struct BEMatrix34 {
+
+template<typename T>
+inline constexpr bool is_BEType_v = std::is_base_of_v<BETypeCompatible, T>;
+
+struct BEMatrix34 : BETypeCompatible {
     BEType<float> x_x;
     BEType<float> y_x;
     BEType<float> z_x;
@@ -161,9 +182,13 @@ struct BEMatrix34 {
     BEType<float> y_z;
     BEType<float> z_z;
     BEType<float> pos_z;
+
+    float DistanceSq(BEMatrix34 other) const {
+        return (pos_x.getLE() - other.pos_x.getLE()) * (pos_x.getLE() - other.pos_x.getLE()) + (pos_y.getLE() - other.pos_y.getLE()) * (pos_y.getLE() - other.pos_y.getLE()) + (pos_z.getLE() - other.pos_z.getLE()) * (pos_z.getLE() - other.pos_z.getLE());
+    }
 };
 
-struct BEVec2 {
+struct BEVec2 : BETypeCompatible {
     BEType<float> x;
     BEType<float> y;
 
@@ -172,13 +197,17 @@ struct BEVec2 {
     BEVec2(BEType<float> x, BEType<float> y): x(x), y(y) {}
 };
 
-struct BEVec3 {
+struct BEVec3 : BETypeCompatible {
     BEType<float> x;
     BEType<float> y;
     BEType<float> z;
 
     BEVec3() = default;
     BEVec3(float x, float y, float z): x(x), y(y), z(z) {}
+
+    float DistanceSq(BEVec3 other) const {
+        return (x.getLE() - other.x.getLE()) * (x.getLE() - other.x.getLE()) + (y.getLE() - other.y.getLE()) * (y.getLE() - other.y.getLE()) + (z.getLE() - other.z.getLE()) * (z.getLE() - other.z.getLE());
+    }
 };
 
 struct data_VRSettingsIn {

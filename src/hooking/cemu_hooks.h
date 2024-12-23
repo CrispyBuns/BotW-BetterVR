@@ -1,5 +1,5 @@
 #pragma once
-#include "rendering/openxr.h"
+#include "pch.h"
 
 class CemuHooks {
 public:
@@ -27,6 +27,7 @@ public:
         osLib_registerHLEFunction("coreinit", "hook_UpdateActorList", &hook_UpdateActorList);
         osLib_registerHLEFunction("coreinit", "hook_CreateNewActor", &hook_CreateNewActor);
         osLib_registerHLEFunction("coreinit", "hook_InjectXRInput", &hook_InjectXRInput);
+        osLib_registerHLEFunction("coreinit", "hook_modifyHandModelAccessSearch", &hook_modifyHandModelAccessSearch);
     };
     ~CemuHooks() {
         FreeLibrary(m_cemuHandle);
@@ -54,6 +55,7 @@ private:
     static void hook_UpdateActorList(PPCInterpreter_t* hCPU);
     static void hook_CreateNewActor(PPCInterpreter_t* hCPU);
     static void hook_InjectXRInput(PPCInterpreter_t* hCPU);
+    static void hook_modifyHandModelAccessSearch(PPCInterpreter_t* hCPU);
 
     static void updateFrames();
 
@@ -79,5 +81,19 @@ private:
     static void readMemory(uint64_t offset, T* resultPtr) {
         uint64_t memoryAddress = s_memoryBaseAddress + offset;
         memcpy(resultPtr, (void*)memoryAddress, sizeof(T));
+    }
+
+    template <typename T>
+    static auto getMemory(uint64_t offset) {
+        if constexpr (is_BEType_v<T>) {
+            T result;
+            readMemoryBE(offset, &result);
+            return result;
+        }
+        else {
+            BEType<T> result;
+            readMemory(offset, &result);
+            return result;
+        }
     }
 };

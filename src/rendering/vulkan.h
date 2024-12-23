@@ -1,13 +1,22 @@
 #pragma once
 #include "texture.h"
 
-using ValueVariant = std::variant<uint32_t, float, XrVector3f, std::string>;
+using ValueVariant = std::variant<BEType<uint32_t>, BEType<int32_t>, BEType<float>, BEVec3, BEMatrix34, std::string>;
 
 struct EntityValue {
     std::string value_name;
+    bool frozen;
     uint32_t value_address;
-    std::variant<uint32_t, float, XrVector3f, std::string> value;
+    ValueVariant value;
 };
+
+struct Entity {
+    std::string name;
+    std::string lowerName;
+    float priority;
+    std::vector<EntityValue> values;
+};
+
 
 class RND_Vulkan {
     friend class ImGuiOverlay;
@@ -21,13 +30,12 @@ public:
         explicit ImGuiOverlay(VkCommandBuffer cb, uint32_t width, uint32_t height, VkFormat format);
         ~ImGuiOverlay();
 
-
         std::string m_filter;
-        std::unordered_map<std::string, std::vector<EntityValue>> m_entities;
+        std::unordered_map<uint32_t, Entity> m_entities;
 
-
-        void AddEntity(::std::string entity, ::std::string name, uint32_t address, ValueVariant& value);
-        void RemoveEntity(std::string entity);
+        void AddOrUpdateEntity(uint32_t actorId, const std::string& entityName, const std::string& valueName, uint32_t address, ValueVariant&& value);
+        void SetPriority(uint32_t actorId, float priority);
+        void RemoveEntity(uint32_t actorId);
 
         void BeginFrame();
         void Draw3DLayerAsBackground(VkCommandBuffer cb, VkImage srcImage, float aspectRatio);

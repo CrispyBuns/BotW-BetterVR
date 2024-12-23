@@ -83,7 +83,8 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     // read existing vpad as to not overwrite it
     uint32_t vpadStatusOffset = hCPU->gpr[4];
     VPADStatus vpadStatus = {};
-    readMemory(vpadStatusOffset, &vpadStatus);
+    // todo: revert this to unblock gamepad input
+    // readMemory(vpadStatusOffset, &vpadStatus);
 
 
     static uint32_t oldCombinedHold = 0;
