@@ -35,6 +35,7 @@ Windows Mixed Reality etc.). You can also use apps like Trinus VR to use this wi
 
 4. Go to `Options`-> `Graphic packs`-> `The Legend of Zelda: Breath of the Wild` and enable the graphic pack named `BetterVR`.
    This is where you can change any VR settings like the first/third-person mode etc.
+   You'll also want to enable FPS++, or else the game will crash!
 
 5. (Recommended) For an enjoyable experience you should change some other graphic packs in this same window too:
    - `Graphics` graphic pack: Use any (non-ultrawide!) resolution of 2160p (4k) or higher for clarity. Also change antialiasing to Nvidia FXAA.

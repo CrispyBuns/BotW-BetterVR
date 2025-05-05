@@ -167,7 +167,15 @@ lwz r0, 0x80(r30)
 subfc r12, r11, r4
 subfe r0, r0, r3
 stw r12, 0x7C(r30)
-stw r0, 0x78(r30)
+;stw r0, 0x78(r30)
+
+; todo: this is a hacky way of calling the FPS++ function, since we can't reference it directly
+lis r12, jumpToFPSPlusPlus@ha
+addi r12, r12, jumpToFPSPlusPlus@l
+mtctr r12
+lwz r12, 0x7C(r30) ; revert register steal
+bctr ; jump to FPS++ function
+
 bl import.coreinit.OSGetSystemTime
 lwz r11, 0x28(r30)
 stw r4, 0x84(r30)
@@ -197,6 +205,7 @@ lwz r31, 0x0C(r1)
 addi r1, r1, 0x10
 blr
 
+0x031FA97C = jumpToFPSPlusPlus:
 0x031FA880 = ba custom_sead__GameFramework__procFrame
 
 ; disable vsync
