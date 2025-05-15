@@ -103,20 +103,20 @@ $cameraHeight = -1.0
 
 [Preset]
 name = Normal (Default)
-category = Player Height
+category = Height In First Person
 condition = $cameraMode == 1
 default = 1
 $cameraHeight = -0.5
 
 [Preset]
 name = Tall (VFX Might Be Offset)
-category = Player Height
+category = Height In First Person
 condition = $cameraMode == 1
 $cameraHeight = 0.0
 
 [Preset]
 name = Really Tall (VFX Might Be Offset)
-category = Player Height
+category = Height In First Person
 condition = $cameraMode == 1
 $cameraHeight = 10.0
 
