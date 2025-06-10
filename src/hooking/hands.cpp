@@ -1,8 +1,11 @@
 #include "../instance.h"
 #include "cemu_hooks.h"
 #include "hands.h"
+// #include "hands.h"
 
-void modifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, glm::fquat cameraRotation, glm::fvec3 cameraPosition) {
+std::array<WeaponMotionAnalyser, 2> CemuHooks::m_motionAnalyzers = {};
+
+static void ModifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, glm::fquat cameraRotation, glm::fvec3 cameraPosition) {
     // convert VR controller info to glm
     OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
 
@@ -13,29 +16,14 @@ void modifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, 
         auto& handPose = side == OpenXR::EyeSide::LEFT ? inputs.inGame.poseLocation[side] : inputs.inGame.poseLocation[side];
 
         if (handPose.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) {
-            controllerPos = glm::fvec3(
-                handPose.pose.position.x,
-                handPose.pose.position.y,
-                handPose.pose.position.z
-            );
+            controllerPos = ToGLM(handPose.pose.position);
         }
         if (handPose.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) {
-            controllerQuat = glm::fquat(
-                handPose.pose.orientation.w,
-                handPose.pose.orientation.x,
-                handPose.pose.orientation.y,
-                handPose.pose.orientation.z
-            );
+            controllerQuat = ToGLM(handPose.pose.orientation);
         }
     }
 
-    // handPose.orientation.w = rotateHorizontalCounter.w;
-    // handPose.orientation.x = rotateHorizontalCounter.x;
-    // handPose.orientation.y = rotateHorizontalCounter.y;
-    // handPose.orientation.z = rotateHorizontalCounter.z;
-    // rotateHorizontalCounter = glm::rotate(rotateHorizontalCounter, glm::radians(360.0f/30.0f/1.0f), glm::fvec3(1.0f, 0.0f, 0.0f));
-
-    // Next, calculate the rotation
+    // Calculate the rotation
     glm::fquat rotatedControllerQuat = glm::normalize(cameraRotation * controllerQuat);
     rotatedControllerQuat = glm::rotate(rotatedControllerQuat, glm::radians(180.0f), glm::fvec3(1.0f, 0.0f, 0.0f));
     rotatedControllerQuat = glm::rotate(rotatedControllerQuat, glm::radians(180.0f), glm::fvec3(0.0f, 0.0f, 1.0f));
@@ -53,7 +41,7 @@ void modifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, 
     toBeAdjustedMtx.y_z = finalMtx[2][1];
     toBeAdjustedMtx.z_z = finalMtx[2][2];
 
-    // First, calculate the position
+    // Calculate the position
     // Use player position as the origin since we want to overwrite the weapon position with the VR controller position
     glm::fvec3 rotatedControllerPos = cameraRotation * controllerPos;
     glm::fvec3 finalPos = cameraPosition + rotatedControllerPos;
@@ -65,6 +53,10 @@ void modifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, 
 
 void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    //if (CemuHooks::GetSettings().IsThirdPersonMode()) {
+    //    return;
+    //}
 
     // r3 holds the source actor pointer
     // r4 holds the bone name
@@ -116,7 +108,7 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
         BEMatrix34 modelBindInfoMtx = {};
         readMemory(modelBindInfoMtxPtr, &modelBindInfoMtx);
 
-        modifyWeaponMtxToVRPose(isLeftHandWeapon ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT, weaponMtx, lookAtQuat, lookAtPos);
+        ModifyWeaponMtxToVRPose(isLeftHandWeapon ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT, weaponMtx, lookAtQuat, lookAtPos);
 
         // prevent weapon transparency
         BEType<float> modelOpacity = 1.0f;
@@ -131,139 +123,12 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
     }
 }
 
-// some ideas for improvements:
-// - movement inaccuracy for more difficulty
-
-
-struct MotionSample {
-    glm::fvec3 position;
-    glm::fquat rotation;
-    glm::fvec3 linearVelocity;
-    glm::fvec3 angularVelocity;
-};
-
-struct SmallSwordProfile {
-
-};
-
-const int MAX_SAMPLES = 300;
-
-class NewWeaponMotionAnalyser {
-public:
-    NewWeaponMotionAnalyser() = default;
-
-    void Update(XrSpaceLocation handLocation, XrSpaceVelocity handVelocity) {
-        // turn it into a sample
-        MotionSample sample = {
-            .position = glm::fvec3(handLocation.pose.position.x, handLocation.pose.position.y, handLocation.pose.position.z),
-            .rotation = glm::fquat(handLocation.pose.orientation.w, handLocation.pose.orientation.x, handLocation.pose.orientation.y, handLocation.pose.orientation.z),
-            .linearVelocity = glm::fvec3(handVelocity.linearVelocity.x, handVelocity.linearVelocity.y, handVelocity.linearVelocity.z),
-            .angularVelocity = glm::fvec3(handVelocity.angularVelocity.x, handVelocity.angularVelocity.y, handVelocity.angularVelocity.z)
-        };
-        m_samples[m_currentSampleIndex] = sample;
-        m_currentSampleIndex = (m_currentSampleIndex + 1) % MAX_SAMPLES;
-    }
-
-    void Reset(WeaponType weaponType) {
-        m_samples.fill({});
-    }
-
-    void ResetIfWeaponTypeChanged(WeaponType weaponType) {
-        if (m_weaponType != weaponType) {
-            m_weaponType = weaponType;
-            Reset(weaponType);
-        }
-    }
-
-    void DrawDebugOverlay() {
-        static int viewMode = 0; // 0: Top, 1: Side
-        if (ImGui::Button("Top View")) viewMode = 0;
-        ImGui::SameLine();
-        if (ImGui::Button("Side View")) viewMode = 1;
-        ImGui::SameLine();
-        ImGui::Text("Weapon Type: %d", (int)m_weaponType);
-
-        // Prepare data arrays
-        std::vector<float> xs, ys, zs;
-        std::vector<ImU32> linVelColors;
-        std::vector<ImU32> angVelColors;
-        float maxLinVel = 0.0f, maxAngVel = 0.0f;
-        for (const auto& sample : m_samples) {
-            float linVelMag = glm::length(sample.linearVelocity);
-            float angVelMag = glm::length(sample.angularVelocity);
-            if (linVelMag > maxLinVel) maxLinVel = linVelMag;
-            if (angVelMag > maxAngVel) maxAngVel = angVelMag;
-        }
-        for (const auto& sample : m_samples) {
-            xs.push_back(sample.position.x);
-            ys.push_back(sample.position.y);
-            zs.push_back(sample.position.z);
-            float linVelMag = glm::length(sample.linearVelocity);
-            float angVelMag = glm::length(sample.angularVelocity);
-            float tLin = maxLinVel > 0.0f ? linVelMag / maxLinVel : 0.0f;
-            float tAng = maxAngVel > 0.0f ? angVelMag / maxAngVel : 0.0f;
-            // Linear velocity: blue (low) to red (high)
-            ImVec4 linColor = ImVec4(1.0f * tLin, 0.0f, 1.0f - tLin, 1.0f);
-            linVelColors.push_back(ImGui::ColorConvertFloat4ToU32(linColor));
-            // Angular velocity: green (low) to yellow (high)
-            ImVec4 angColor = ImVec4(tAng, tAng, 0.0f, 1.0f); // green to yellow
-            angVelColors.push_back(ImGui::ColorConvertFloat4ToU32(angColor));
-        }
-
-        ImVec2 plotSize = ImVec2(400, 400);
-        if (ImPlot3D::BeginPlot("Weapon Motion", plotSize)) {
-            ImPlot3D::SetupAxes("X", "Y", "Z");
-            if (viewMode == 0) {
-                ImPlot3D::SetupAxisLimits(ImAxis3D_X, -1, 1, ImPlot3DCond_Once);
-                ImPlot3D::SetupAxisLimits(ImAxis3D_Y, -1, 1, ImPlot3DCond_Once);
-                ImPlot3D::SetupAxisLimits(ImAxis3D_Z, -1, 1, ImPlot3DCond_Once);
-            } else {
-                ImPlot3D::SetupAxisLimits(ImAxis3D_X, -1, 1, ImPlot3DCond_Once);
-                ImPlot3D::SetupAxisLimits(ImAxis3D_Y, -1, 1, ImPlot3DCond_Once);
-                ImPlot3D::SetupAxisLimits(ImAxis3D_Z, -1, 1, ImPlot3DCond_Once);
-            }
-            if (!xs.empty()) {
-                // Draw the path as a line colored by linear velocity
-                ImDrawList* drawList = ImPlot3D::GetPlotDrawList();
-                for (size_t i = 1; i < xs.size(); ++i) {
-                    ImVec2 p0 = ImPlot3D::PlotToPixels(xs[i-1], ys[i-1], zs[i-1]);
-                    ImVec2 p1 = ImPlot3D::PlotToPixels(xs[i], ys[i], zs[i]);
-                    drawList->AddLine(p0, p1, linVelColors[i], 2.0f);
-                }
-                // Draw scatter points colored by angular velocity
-                for (size_t i = 0; i < xs.size(); ++i) {
-                    ImVec2 pix = ImPlot3D::PlotToPixels(xs[i], ys[i], zs[i]);
-                    drawList->AddCircleFilled(pix, 3.0f, angVelColors[i]);
-                }
-            }
-            ImPlot3D::EndPlot();
-        }
-    }
-
-private:
-    WeaponType m_weaponType = WeaponType::UnknownWeapon;
-
-    std::array<MotionSample, MAX_SAMPLES> m_samples = {};
-    int m_currentSampleIndex = 0;
-};
-
-
-// we should have two Motion Analysers here, since we have two hands
-std::array<NewWeaponMotionAnalyser, 2> s_motionAnalyzers = {};
-
-void DrawDebugOverlays() {
-    if (ImGui::Begin("Weapon Motion Debugger")) {
-        for (auto& analyzer : s_motionAnalyzers) {
-            ImGui::PushID(&analyzer);
-            analyzer.DrawDebugOverlay();
-            ImGui::PopID();
-        }
-        ImGui::End();
-    }
-}
-
 void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    //if (CemuHooks::GetSettings().IsThirdPersonMode()) {
+    //    return;
+    //}
 
     uint32_t weaponPtr = hCPU->gpr[3];
     uint32_t parentActorPtr = hCPU->gpr[4];
@@ -275,27 +140,31 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
 
     WeaponType weaponType = weapon.type.getLE();
     if (weaponType == WeaponType::Bow || weaponType == WeaponType::Shield) {
-        Log::print("! Skipping motion analysis for Bow/Shield (type: {})", (int)weaponType);
+        Log::print("!! Skipping motion analysis for Bow/Shield (type: {})", (int)weaponType);
         return;
     }
 
-    if (heldIndex >= s_motionAnalyzers.size()) {
-        Log::print("! Invalid heldIndex: {}. Skipping motion analysis.", heldIndex);
+    if (heldIndex >= m_motionAnalyzers.size()) {
+        Log::print("!! Invalid heldIndex: {}. Skipping motion analysis.", heldIndex);
         return;
     }
+
+    heldIndex = heldIndex == 0 ? 1 : 0;
 
     auto state = VRManager::instance().XR->m_input.load();
-    s_motionAnalyzers[heldIndex].ResetIfWeaponTypeChanged(weaponType);
-    s_motionAnalyzers[heldIndex].Update(state.inGame.poseLocation[heldIndex], state.inGame.poseVelocity[heldIndex]);
+    auto headset = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
 
-    // 0x3A0 is 0 apparently for armor displays, so prevent null pointer dereference
-    //ActorWiiU parentActor = {};
-    //readMemory(parentActorPtr, &parentActor);
-    //bool hasPhysics = parentActor.actorPhysicsPtr.getLE() != 0;
-    // Log::print("! parentActorPtr=0x{:X}, hasPhysics={}", parentActorPtr, hasPhysics);
+    if (!headset.has_value()) {
+        return;
+    }
+
+
+    m_motionAnalyzers[heldIndex].ResetIfWeaponTypeChanged(weaponType);
+    m_motionAnalyzers[heldIndex].Update(state.inGame.poseLocation[heldIndex], state.inGame.poseVelocity[heldIndex], headset.value(), state.inGame.inputTime);
 
     // Use the analysed motion to determine whether the weapon is swinging or stabbing, and whether the attackSensor should be active this frame
-    if (isHeldByPlayer && s_motionAnalyzers[heldIndex].IsAttacking()) {
+    if (isHeldByPlayer && m_motionAnalyzers[heldIndex].IsAttacking()) {
+        m_motionAnalyzers[heldIndex].SetHitboxEnabled(true);
         Log::print("!! Activate sensor for {}: isHeldByPlayer={}, weaponType={}", heldIndex, isHeldByPlayer, (int)weaponType);
         weapon.setupAttackSensor.resetAttack = 1;
         weapon.setupAttackSensor.mode = 2;
@@ -305,8 +174,14 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
         // weapon.setupAttackSensor.impact = analyzer->GetImpulse();
         writeMemory(weaponPtr, &weapon);
     }
-    else {
-        // Log::print("! Not activating attack sensor: isHeldByPlayer={}, hasPhysics={}", isHeldByPlayer, hasPhysics);
+    else if (m_motionAnalyzers[heldIndex].IsHitboxEnabled()) {
+        m_motionAnalyzers[heldIndex].SetHitboxEnabled(false);
+        Log::print("!! Deactivate sensor for {}: isHeldByPlayer={}, weaponType={}", heldIndex, isHeldByPlayer, (int)weaponType);
+
+        weapon.setupAttackSensor.resetAttack = 1;
+        weapon.setupAttackSensor.mode = 1; // deactivate attack sensor
+        weapon.setupAttackSensor.isContactLayerInitialized = 0;
+        writeMemory(weaponPtr, &weapon);
     }
 }
 
@@ -317,7 +192,7 @@ void CemuHooks::hook_EquipWeapon(PPCInterpreter_t* hCPU) {
     uint32_t toBeEquipedSlot = hCPU->gpr[25];
 
     if (toBeEquipedSlot == 0 || toBeEquipedSlot == 1) {
-        hCPU->gpr[25] = (input.inGame.lastPickupSide == OpenXR::EyeSide::LEFT) ? 0 : 1;
+        //hCPU->gpr[25] = (input.inGame.lastPickupSide == OpenXR::EyeSide::LEFT) ? 1 : 0;
     }
 
     //switch (hCPU->gpr[25]) {
@@ -351,32 +226,15 @@ void CemuHooks::hook_ModifyHandModelAccessSearch(PPCInterpreter_t* hCPU) {
 #endif
 }
 
-void CemuHooks::hook_CreateNewActor(PPCInterpreter_t* hCPU) {
-    hCPU->instructionPointer = hCPU->sprNew.LR;
-
-    // if (VRManager::instance().XR->GetRenderer() == nullptr || VRManager::instance().XR->GetRenderer()->m_layer3D.GetStatus() == RND_Renderer::Layer3D::Status3D::UNINITIALIZED) {
-    //     hCPU->gpr[3] = 0;
-    //     return;
-    // }
-    hCPU->gpr[3] = 0;
-
-    // OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
-    // if (!inputs.inGame.in_game) {
-    //     hCPU->gpr[3] = 0;
-    //     return;
-    // }
-    //
-    // // test if controller is connected
-    // if (inputs.inGame.grab[OpenXR::EyeSide::LEFT].currentState == XR_TRUE && inputs.inGame.grab[OpenXR::EyeSide::LEFT].changedSinceLastSync == XR_TRUE) {
-    //     Log::print("Trying to spawn new thing!");
-    //     hCPU->gpr[3] = 1;
-    // }
-    // else if (inputs.inGame.grab[OpenXR::EyeSide::RIGHT].currentState == XR_TRUE && inputs.inGame.grab[OpenXR::EyeSide::RIGHT].changedSinceLastSync == XR_TRUE) {
-    //     Log::print("Trying to spawn new thing!");
-    //     hCPU->gpr[3] = 1;
-    // }
-    // else {
-    //     hCPU->gpr[3] = 0;
-    // }
+void CemuHooks::DrawDebugOverlays() {
+    if (ImGui::Begin("Weapon Motion Debugger")) {
+        for (auto it = m_motionAnalyzers.rbegin(); it != m_motionAnalyzers.rend(); ++it) {
+            ImGui::PushID(&(*it));
+            ImGui::BeginGroup();
+            it->DrawDebugOverlay();
+            ImGui::EndGroup();
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
 }
-

@@ -4,6 +4,31 @@ moduleMatches = 0x6267BFD0
 .origin = codecave
 
 
+hook_equipWeapon:
+mflr r0
+stwu r1, -0x20(r1)
+stw r0, 0x24(r1)
+stw r3, 0x1C(r1)
+stw r4, 0x18(r1)
+stw r5, 0x14(r1)
+
+bl import.coreinit.hook_EquipWeapon
+
+lwz r5, 0x14(r1)
+lwz r4, 0x18(r1)
+lwz r3, 0x1C(r1)
+lwz r0, 0x24(r1)
+addi r1, r1, 0x20
+mtlr r0
+
+lwz r3, 0x60(r24) ; replaced instruction
+blr
+
+0x033BCEDC = bla hook_equipWeapon
+
+
+
+
 0x0339488C = ksys_act_hasTag:
 
 hook_enableWeapon:

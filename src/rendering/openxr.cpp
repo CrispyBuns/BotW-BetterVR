@@ -61,7 +61,7 @@ OpenXR::OpenXR() {
     xrInstanceCreateInfo.enabledExtensionNames = enabledExtensions.data();
     xrInstanceCreateInfo.enabledApiLayerCount = 0;
     xrInstanceCreateInfo.enabledApiLayerNames = NULL;
-    xrInstanceCreateInfo.applicationInfo = { "BetterVR", 1, "Cemu", 1, XR_CURRENT_API_VERSION };
+    xrInstanceCreateInfo.applicationInfo = { "BetterVR", 1, "Cemu", 1, XR_API_VERSION_1_0 };
     checkXRResult(xrCreateInstance(&xrInstanceCreateInfo, &m_instance), "Failed to initialize the OpenXR instance!");
 
     // Load extension pointers for this XrInstance
@@ -108,13 +108,17 @@ OpenXR::OpenXR() {
 
     // Print configuration used, mostly for debugging purposes
     Log::print("Acquired system to be used:");
-    Log::print(" - System Name: {}", xrSystemProperties.systemName);
-    Log::print(" - Runtime Name: {}", properties.runtimeName);
+    Log::print(" - System Name: {}", xrSystemProperties.systemName); // Oculus Quest2
+    Log::print(" - Runtime Name: {}", properties.runtimeName); // Oculus
     Log::print(" - Runtime Version: {}.{}.{}", XR_VERSION_MAJOR(properties.runtimeVersion), XR_VERSION_MINOR(properties.runtimeVersion), XR_VERSION_PATCH(properties.runtimeVersion));
     Log::print(" - Supports Mutable FOV: {}", m_capabilities.supportsMutatableFOV ? "Yes" : "No");
     Log::print(" - Supports Orientation Tracking: {}", xrSystemProperties.trackingProperties.orientationTracking ? "Yes" : "No");
     Log::print(" - Supports Positional Tracking: {}", xrSystemProperties.trackingProperties.positionTracking ? "Yes" : "No");
     Log::print(" - Supports D3D12 feature level {} or higher", graphicsRequirements.minFeatureLevel);
+
+    m_capabilities.isOculusLinkRuntime = std::string(properties.runtimeName) == "Oculus";
+    Log::print(" - Using Meta Quest Link OpenXR runtime: {}", m_capabilities.isOculusLinkRuntime ? "Yes" : "No");
+
 }
 
 OpenXR::~OpenXR() {
@@ -370,7 +374,7 @@ void OpenXR::CreateActions() {
     }
 }
 
-std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTime, bool inMenu) {
+std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTime, glm::fquat controllerRotation, bool inMenu) {
     XrActiveActionSet activeActionSet = { (inMenu ? m_menuActionSet : m_gameplayActionSet), XR_NULL_PATH };
 
     XrActionsSyncInfo syncInfo = { XR_TYPE_ACTIONS_SYNC_INFO };
@@ -381,6 +385,7 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
     InputState newState = {};
     newState.inGame.in_game = !inMenu;
     newState.inGame.inputTime = predictedFrameTime;
+    newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
 
     if (inMenu) {
         XrActionStateGetInfo getScrollInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
@@ -418,10 +423,18 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
         newState.inMenu.leftTrigger = { XR_TYPE_ACTION_STATE_BOOLEAN };
         checkXRResult(xrGetActionStateBoolean(m_session, &getLeftTriggerInfo, &newState.inMenu.leftTrigger), "Failed to get left trigger action value!");
 
+        if (newState.inMenu.leftTrigger.currentState == XR_TRUE) {
+            newState.inMenu.lastPickupSide = OpenXR::EyeSide::LEFT;
+        }
+
         XrActionStateGetInfo getRightTriggerInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
         getRightTriggerInfo.action = m_rightTriggerAction;
         newState.inMenu.rightTrigger = { XR_TYPE_ACTION_STATE_BOOLEAN };
         checkXRResult(xrGetActionStateBoolean(m_session, &getRightTriggerInfo, &newState.inMenu.rightTrigger), "Failed to get right trigger action value!");
+
+        if (newState.inMenu.rightTrigger.currentState == XR_TRUE) {
+            newState.inMenu.lastPickupSide = OpenXR::EyeSide::RIGHT;
+        }
 
         XrActionStateGetInfo getMap = { XR_TYPE_ACTION_STATE_GET_INFO };
         getMap.action = m_inMenu_mapAction;
@@ -452,6 +465,16 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
                     newState.inGame.poseLocation[side] = spaceLocation;
 
                     if ((spaceLocation.locationFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT) != 0 && (spaceLocation.locationFlags & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT) != 0) {
+                        // rotate angular velocity to world space when it's using a buggy runtime
+                        auto mode = CemuHooks::GetSettings().AngularVelocityFixer_GetMode();
+                        bool isUsingQuestRuntime = m_capabilities.isOculusLinkRuntime;
+                        if ((mode == data_VRSettingsIn::AngularVelocityFixerMode::AUTO && isUsingQuestRuntime) || mode == data_VRSettingsIn::AngularVelocityFixerMode::FORCED_ON) {
+                            glm::vec3 angularVelocity = glm::fvec3(spaceVelocity.angularVelocity.x, spaceVelocity.angularVelocity.y, spaceVelocity.angularVelocity.z);
+                            glm::fquat fix_angle = glm::fquat(0.924, -0.383, 0, 0);
+                            angularVelocity = (glm::fquat(spaceLocation.pose.orientation.w, spaceLocation.pose.orientation.x, spaceLocation.pose.orientation.y, spaceLocation.pose.orientation.z) * (fix_angle * angularVelocity)); // TOD: Contact other modders for similar issues with angular velocity being not on the grip rotation (quest 2) + Tune the angular velocity based on manually calculated on rotation positions
+                            spaceVelocity.angularVelocity = { angularVelocity.x, angularVelocity.y, angularVelocity.z };
+                        }
+
                         newState.inGame.poseVelocity[side] = spaceVelocity;
                     }
                 }
@@ -462,6 +485,10 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
             getGrabInfo.subactionPath = m_handPaths[side];
             newState.inGame.grab[side] = { XR_TYPE_ACTION_STATE_BOOLEAN };
             checkXRResult(xrGetActionStateBoolean(m_session, &getGrabInfo, &newState.inGame.grab[side]), "Failed to get grab action value!");
+
+            if (newState.inGame.grab[side].currentState == XR_TRUE) {
+                newState.inGame.lastPickupSide = side;
+            }
         }
 
         XrActionStateGetInfo getMap = { XR_TYPE_ACTION_STATE_GET_INFO };

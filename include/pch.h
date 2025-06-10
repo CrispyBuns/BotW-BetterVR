@@ -60,6 +60,14 @@ using Microsoft::WRL::ComPtr;
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+inline glm::fvec3 ToGLM(const XrVector3f& vec) {
+    return glm::make_vec3(&vec.x);
+}
+
+inline glm::fquat ToGLM(const XrQuaternionf& quat) {
+    return glm::fquat(quat.w, quat.x, quat.y, quat.z);
+}
+
 
 inline std::string& toLower(std::string str) {
     std::ranges::transform(str, str.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -367,6 +375,7 @@ struct data_VRSettingsIn {
     BEType<int32_t> enable2DVRView;
     BEType<int32_t> cropFlatTo16x9Setting;
     BEType<int32_t> enableDebugOverlay;
+    BEType<int32_t> buggyAngularVelocity;
 
     bool IsLeftHanded() const {
         return leftHandedSetting == 1;
@@ -374,6 +383,10 @@ struct data_VRSettingsIn {
 
     bool IsFirstPersonMode() const {
         return cameraModeSetting == 0;
+    }
+
+    bool IsThirdPersonMode() const {
+        return cameraModeSetting == 1;
     }
 
     bool UIFollowsLookingDirection() const {
@@ -390,6 +403,17 @@ struct data_VRSettingsIn {
 
     bool ShowDebugOverlay() const {
         return enableDebugOverlay.getLE() != 0;
+    }
+
+    enum class AngularVelocityFixerMode {
+        AUTO = 0, // Angular velocity fixer is automatically enabled for Oculus Link
+        FORCED_ON = 1,
+        FORCED_OFF = 2,
+
+    };
+
+    AngularVelocityFixerMode AngularVelocityFixer_GetMode() {
+        return (AngularVelocityFixerMode)buggyAngularVelocity.getLE();
     }
 };
 

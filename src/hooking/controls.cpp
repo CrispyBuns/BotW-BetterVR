@@ -191,3 +191,42 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     // set r3 to 1 for hooked VPADRead function to return success
     hCPU->gpr[3] = 1;
 }
+
+
+
+
+
+// some ideas:
+// - quickly pressing the grip button without a weapon while there's a nearby weapon and there's enough slots = pick up weapon
+// - holding the grip button without a weapon while there's a nearby weapon = temporarily hold weapon
+// - holding the grip button a weapon equipped = opens weapon dpad menu
+// - quickly press the grip button while holding a weapon = drops current weapon
+
+void CemuHooks::hook_CreateNewActor(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    // if (VRManager::instance().XR->GetRenderer() == nullptr || VRManager::instance().XR->GetRenderer()->m_layer3D.GetStatus() == RND_Renderer::Layer3D::Status3D::UNINITIALIZED) {
+    //     hCPU->gpr[3] = 0;
+    //     return;
+    // }
+    hCPU->gpr[3] = 0;
+
+    // OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
+    // if (!inputs.inGame.in_game) {
+    //     hCPU->gpr[3] = 0;
+    //     return;
+    // }
+    //
+    // // test if controller is connected
+    // if (inputs.inGame.grab[OpenXR::EyeSide::LEFT].currentState == XR_TRUE && inputs.inGame.grab[OpenXR::EyeSide::LEFT].changedSinceLastSync == XR_TRUE) {
+    //     Log::print("Trying to spawn new thing!");
+    //     hCPU->gpr[3] = 1;
+    // }
+    // else if (inputs.inGame.grab[OpenXR::EyeSide::RIGHT].currentState == XR_TRUE && inputs.inGame.grab[OpenXR::EyeSide::RIGHT].changedSinceLastSync == XR_TRUE) {
+    //     Log::print("Trying to spawn new thing!");
+    //     hCPU->gpr[3] = 1;
+    // }
+    // else {
+    //     hCPU->gpr[3] = 0;
+    // }
+}

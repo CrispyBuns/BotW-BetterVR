@@ -10,7 +10,7 @@ public:
         gameMeta_getTitleId = (gameMeta_getTitleIdPtr_t)GetProcAddress(m_cemuHandle, "gameMeta_getTitleId");
         memory_getBase = (memory_getBasePtr_t)GetProcAddress(m_cemuHandle, "memory_getBase");
         osLib_registerHLEFunction = (osLib_registerHLEFunctionPtr_t)GetProcAddress(m_cemuHandle, "osLib_registerHLEFunction");
-        checkAssert(gameMeta_getTitleId != NULL && memory_getBase != NULL && osLib_registerHLEFunction != NULL, "Failed to get function pointers of Cemu functions! Is this hook being used on Cemu?");
+        checkAssert(gameMeta_getTitleId != nullptr && memory_getBase != nullptr && osLib_registerHLEFunction != nullptr, "Failed to get function pointers of Cemu functions! Is this hook being used on Cemu?");
 
         bool isSupportedTitleId = gameMeta_getTitleId() == 0x00050000101C9300 || gameMeta_getTitleId() == 0x00050000101C9400 || gameMeta_getTitleId() == 0x00050000101C9500;
         checkAssert(isSupportedTitleId, std::format("Expected title IDs for Breath of the Wild (00050000-101C9300, 00050000-101C9400 or 00050000-101C9500) but received {:16x}!", gameMeta_getTitleId()).c_str());
@@ -47,6 +47,9 @@ public:
     static uint64_t GetMemoryBaseAddress() { return s_memoryBaseAddress; }
 
     std::unique_ptr<class EntityDebugger> m_entityDebugger;
+    static std::array<class WeaponMotionAnalyser, 2> m_motionAnalyzers;
+
+    static void DrawDebugOverlays();
 
 private:
     HMODULE m_cemuHandle;
@@ -75,9 +78,6 @@ private:
     static void hook_ApplyCameraRotation(PPCInterpreter_t* hCPU);
     static void hook_EndCameraSide(PPCInterpreter_t* hCPU);
 
-public:
-    static void DebugTestMotionAnalyser();
-private:
     static void hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU);
     static void hook_EquipWeapon(PPCInterpreter_t* hCPU);
 
@@ -122,6 +122,3 @@ public:
         }
     }
 };
-
-
-void DrawDebugOverlays();

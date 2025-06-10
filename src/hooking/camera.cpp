@@ -48,67 +48,59 @@ void CemuHooks::hook_BeginCameraSide(PPCInterpreter_t* hCPU) {
 // 0x2B9B930 = li r3, 0
 
 
-OpenXR::EyeSide s_currentEye = OpenXR::EyeSide::RIGHT;
-std::pair<data_VRCameraRotationOut, OpenXR::EyeSide> s_currentCameraRotation = {};
+static glm::fquat extractYaw(const glm::fquat& q) {
+    // filter out everything but the yaw, with a world normal of 0 1 0
+    glm::fquat n = glm::normalize(q);
+    float yaw = glm::yaw(n);
+    // 3. Re-create a quaternion that rotates *only* around the global +Y axis. AngleAxis expects (angle, axis). GLM angles are in radians.
+    return glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+}
 
 void CemuHooks::hook_updateCameraOLD(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
-    // Log::print("[{}] Updated camera position", s_currentEye == OpenXR::EyeSide::LEFT ? "left" : "right");
-    //
-    // // Read the camera matrix from the game's memory
-    // uint32_t ppc_cameraMatrixOffsetIn = hCPU->gpr[7];
-    // data_VRCameraIn origCameraMatrix = {};
-    //
-    // readMemory(ppc_cameraMatrixOffsetIn, &origCameraMatrix);
-    //
-    // // Current VR headset camera matrix
-    // XrPosef currPose = VRManager::instance().XR->GetRenderer()->GetPose(s_currentEye).value();
-    // XrFovf currFov = VRManager::instance().XR->GetRenderer()->GetFOV(s_currentEye).value();
-    //
-    // glm::fvec3 currEyePos(currPose.position.x, currPose.position.y, currPose.position.z);
-    // glm::fquat currEyeQuat(currPose.orientation.w, currPose.orientation.x, currPose.orientation.y, currPose.orientation.z);
-    //
-    // // Current in-game camera matrix
-    // glm::fvec3 oldCameraPosition(origCameraMatrix.posX, origCameraMatrix.posY, origCameraMatrix.posZ);
-    // // todo: test if third-person mode camera can still be controlled adequately with player movement stick
-    // glm::fvec3 oldCameraTarget(origCameraMatrix.targetX, CemuHooks::GetSettings().IsFirstPersonMode() || true ? origCameraMatrix.posY : origCameraMatrix.targetY, origCameraMatrix.targetZ);
-    // float oldCameraDistance = glm::distance(oldCameraPosition, oldCameraTarget);
-    //
-    // // Calculate game view directions
-    // glm::fvec3 forwardVector = glm::normalize(oldCameraTarget - oldCameraPosition);
-    // glm::fquat lookAtQuat = glm::quatLookAtRH(forwardVector, { 0.0, 1.0, 0.0 });
-    //
-    // // Calculate new view direction
-    // glm::fquat combinedQuat = glm::normalize(lookAtQuat * currEyeQuat);
-    // glm::fmat3 combinedMatrix = glm::toMat3(combinedQuat);
-    //
-    // // Rotate the headset position by the in-game rotation
-    // glm::fvec3 rotatedHmdPos = lookAtQuat * currEyePos;
-    //
-    // data_VRCameraOut updatedCameraMatrix = {};
-    // updatedCameraMatrix.enabled = true;
-    // updatedCameraMatrix.posX = oldCameraPosition.x + rotatedHmdPos.x;
-    // updatedCameraMatrix.posY = oldCameraPosition.y + rotatedHmdPos.y + CemuHooks::GetSettings().playerHeightSetting.getLE();
-    // updatedCameraMatrix.posZ = oldCameraPosition.z + rotatedHmdPos.z;
-    // // pos + rotated headset pos + inverted forward direction after combining both the in-game and HMD rotation
-    // updatedCameraMatrix.targetX = oldCameraPosition.x + rotatedHmdPos.x + ((combinedMatrix[2][0] * -1.0f) * oldCameraDistance);
-    // updatedCameraMatrix.targetY = oldCameraPosition.y + rotatedHmdPos.y + ((combinedMatrix[2][1] * -1.0f) * oldCameraDistance) + CemuHooks::GetSettings().playerHeightSetting.getLE();
-    // updatedCameraMatrix.targetZ = oldCameraPosition.z + rotatedHmdPos.z + ((combinedMatrix[2][2] * -1.0f) * oldCameraDistance);
-    //
-    // // set the lookAt position and quaternion with offset to be able to translate the controller position to the game world
-    // // g_lookAtPos = oldCameraPosition;
-    // // g_lookAtPos.y += CemuHooks::GetSettings().playerHeightSetting.getLE();
-    // // g_lookAtQuat = lookAtQuat;
-    //
-    // // manages pivot, roll and pitch presumably
-    // s_currentCameraRotation.first.rotY = combinedMatrix[1][1];
-    // s_currentCameraRotation.first.rotX = combinedMatrix[1][0];
-    // s_currentCameraRotation.first.rotZ = combinedMatrix[1][2];
-    // s_currentCameraRotation.second = s_currentEye;
-    //
-    // // Write the camera matrix to the game's memory
-    // uint32_t ppc_cameraMatrixOffsetOut = hCPU->gpr[3];
-    // writeMemory(ppc_cameraMatrixOffsetOut, &updatedCameraMatrix);
+
+    // Read the camera matrix from the game's memory
+    uint32_t ppc_cameraMatrixOffsetIn = hCPU->gpr[31];
+    uint32_t ppc_cameraSide = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+    ActCamera origCameraMatrix = {};
+    readMemory(ppc_cameraMatrixOffsetIn, &origCameraMatrix);
+
+    //Log::print("[{}] Updated camera position", ppc_cameraSide == OpenXR::EyeSide::LEFT ? "left" : "right");
+
+    // Current VR headset camera matrix
+    auto views = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
+    if (!views) {
+        Log::print("[ERROR] hook_updateCamera: No views available for the middle pose.");
+        return;
+    }
+
+    glm::fquat playerYaw = extractYaw(views.value());
+
+
+    // Current in-game camera matrix
+    glm::fvec3 oldCameraPosition = glm::fvec3(origCameraMatrix.finalCamMtx.x_x.getLE(), origCameraMatrix.finalCamMtx.y_x.getLE(), origCameraMatrix.finalCamMtx.z_x.getLE());
+    glm::fvec3 oldCameraTarget = glm::fvec3(origCameraMatrix.finalCamMtx.pos_x.getLE(), origCameraMatrix.finalCamMtx.y_x.getLE(), origCameraMatrix.finalCamMtx.y_y.getLE());
+    float oldCameraDistance = glm::distance(oldCameraPosition, oldCameraTarget);
+
+    // Calculate game view directions
+    glm::fvec3 forwardVector = glm::normalize(oldCameraTarget - oldCameraPosition);
+    glm::fquat lookAtQuat = glm::quatLookAtRH(forwardVector, { 0.0, 1.0, 0.0 });
+
+    // Calculate new view direction
+    glm::fquat combinedQuat = glm::normalize(lookAtQuat * playerYaw);
+    glm::fmat3 combinedMatrix = glm::mat3_cast(combinedQuat);
+
+    origCameraMatrix.finalCamMtx.x_x = oldCameraPosition.x;
+    origCameraMatrix.finalCamMtx.y_x = oldCameraPosition.y;
+    origCameraMatrix.finalCamMtx.z_x = oldCameraPosition.z;
+    // pos + rotated headset pos + inverted forward direction after combining both the in-game and HMD rotation
+    origCameraMatrix.finalCamMtx.pos_x = oldCameraPosition.x + ((combinedMatrix[2][0] * -1.0f) * oldCameraDistance);
+    origCameraMatrix.finalCamMtx.x_y = oldCameraPosition.y + ((combinedMatrix[2][1] * -1.0f) * oldCameraDistance);
+    origCameraMatrix.finalCamMtx.z_y = oldCameraPosition.z + ((combinedMatrix[2][2] * -1.0f) * oldCameraDistance);
+
+    // Write the camera matrix to the game's memory
+    uint32_t ppc_cameraMatrixOffsetOut = hCPU->gpr[31];
+    //writeMemory(ppc_cameraMatrixOffsetOut, &origCameraMatrix);
     s_framesSinceLastCameraUpdate = 0;
 }
 
@@ -131,15 +123,6 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
         glm::mat4 worldGame = glm::inverse(viewGame);
         glm::quat baseRot = glm::quat_cast(worldGame);
 
-        // force camera to never tilt down
-        glm::vec3 fwd = baseRot * glm::vec3(0, 0, -1);
-        fwd.y = 0.0f;
-        if (glm::dot(fwd, fwd) > 0.0001f)
-            fwd = glm::normalize(fwd);
-        else
-            fwd = glm::vec3(0, 0, -1);
-        baseRot = glm::quatLookAt(fwd, glm::vec3(0, 1, 0));
-
         glm::vec3 basePos = glm::vec3(worldGame[3]) + glm::vec3(0.0f, GetSettings().playerHeightSetting.getLE(), 0.0f);
 
         // vr camera
@@ -147,11 +130,23 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
             return;
         }
         XrPosef currPose = VRManager::instance().XR->GetRenderer()->GetPose(cameraSide).value();
-        glm::fvec3 eyePos(currPose.position.x, currPose.position.y, currPose.position.z);
-        glm::fquat eyeRot(currPose.orientation.w, currPose.orientation.x, currPose.orientation.y, currPose.orientation.z);
+        glm::fvec3 eyePos = ToGLM(currPose.position);
+        glm::fquat eyeRot = ToGLM(currPose.orientation);
+
+
+        auto views = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
+        if (!views) {
+            Log::print("[ERROR] hook_updateCamera: No views available for the middle pose.");
+            return;
+        }
+
+        glm::fquat playerYaw = glm::inverse(extractYaw(views.value()));
 
         glm::vec3 newPos = basePos + (baseRot * eyePos);
-        glm::quat newRot = baseRot * eyeRot;
+
+        // remove the yaw rotation from the headset rotation
+        glm::fquat negatedEyeRot = playerYaw * eyeRot;
+        glm::fquat newRot = baseRot * eyeRot;
 
         glm::mat4 newWorldVR = glm::translate(glm::mat4(1.0f), newPos) * glm::mat4_cast(newRot);
         glm::mat4 newViewVR = glm::inverse(newWorldVR);
@@ -226,8 +221,6 @@ void CemuHooks::hook_GetRenderProjection(PPCInterpreter_t* hCPU) {
         readMemory(projectionIn, &perspectiveProjection);
 
         if (perspectiveProjection.zFar == 10000.0f) {
-            // Log::print("[PPC] Getting render projection for {} side", side == OpenXR::EyeSide::LEFT ? "left" : "right");
-            // Log::print("[PPC] Getting render projection (LR: {:08X}): {}", hCPU->sprNew.LR, perspectiveProjection);
             return;
         }
 
@@ -281,7 +274,7 @@ void CemuHooks::hook_ApplyCameraRotation(PPCInterpreter_t* hCPU) {
     //
     // // rotate the camera with whatever the OpenXR rotation is
     // XrPosef currFOV = VRManager::instance().XR->GetRenderer()->GetPose(OpenXR::EyeSide::LEFT).value();
-    // glm::fquat currQuat = glm::fquat(currFOV.orientation.w, currFOV.orientation.x, currFOV.orientation.y, currFOV.orientation.z);
+    // glm::fquat currQuat = ToGLM(currFOV.orientation);
     // glm::fquat rotateHorizontalCounter = glm::angleAxis(glm::radians(addedAngle), glm::fvec3(0.0f, 1.0f, 0.0f));
     // currQuat = rotateHorizontalCounter * currQuat;
     //

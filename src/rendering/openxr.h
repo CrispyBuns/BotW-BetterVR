@@ -20,12 +20,14 @@ public:
         bool supportsOrientational;
         bool supportsPositional;
         bool supportsMutatableFOV;
+        bool isOculusLinkRuntime;
     } m_capabilities = {};
 
     union InputState {
         struct InGame {
             bool in_game = true;
             XrTime inputTime;
+            std::optional<EyeSide> lastPickupSide = std::nullopt;
 
             // shared
             XrActionStateBoolean map;
@@ -47,6 +49,7 @@ public:
         struct InMenu {
             bool in_game = false;
             XrTime m_inputTime;
+            std::optional<EyeSide> lastPickupSide = std::nullopt;
 
             // shared
             XrActionStateBoolean map;
@@ -70,7 +73,7 @@ public:
     void CreateActions();
     std::array<XrViewConfigurationView, 2> GetViewConfigurations();
     std::optional<XrSpaceLocation> UpdateSpaces(XrTime predictedDisplayTime);
-    std::optional<InputState> UpdateActions(XrTime predictedFrameTime, bool inMenu);
+    std::optional<InputState> UpdateActions(XrTime predictedFrameTime, glm::fquat controllerRotation, bool inMenu);
     void ProcessEvents();
 
     XrSession GetSession() const { return m_session; }
@@ -104,13 +107,6 @@ private:
 
     XrAction m_inGame_mapAction = XR_NULL_HANDLE;
     XrAction m_inGame_inventoryAction = XR_NULL_HANDLE;
-    // XrAction m_interactAction = XR_NULL_HANDLE;
-    // XrAction m_jumpAction = XR_NULL_HANDLE;
-    // XrAction m_cancelAction = XR_NULL_HANDLE;
-    // XrAction m_mapAction = XR_NULL_HANDLE;
-    // XrAction m_menuAction = XR_NULL_HANDLE;
-    // XrAction m_moveAction = XR_NULL_HANDLE;
-    // XrAction m_cameraAction = XR_NULL_HANDLE;
     XrAction m_rumbleAction = XR_NULL_HANDLE;
 
     // menu actions

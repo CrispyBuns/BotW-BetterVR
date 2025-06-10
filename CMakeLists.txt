@@ -72,6 +72,7 @@ target_sources(BetterVR_Layer PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/cemu_hooks.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/camera.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/settings.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/hands.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/hands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/controls.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/hooking/entity_debugger.h

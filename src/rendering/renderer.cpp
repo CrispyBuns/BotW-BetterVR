@@ -34,11 +34,14 @@ void RND_Renderer::StartFrame() {
     // VRManager::instance().XR->UpdateSpaces(m_frameState.predictedDisplayTime);
 
     // todo: I'm not sure if these actions should be separated like we do with the XrViews
-    Log::print("Updating actions while being in the {} state", VRManager::instance().Hooks->GetFramesSinceLastCameraUpdate() >= 3 ? "menu" : "in-game");
-    VRManager::instance().XR->UpdateActions(m_frameState.predictedDisplayTime, VRManager::instance().Hooks->GetFramesSinceLastCameraUpdate() >= 3);
-    // todo: update this as late as possible
-    // currently we only support non-AER presenting, aka we render two textures with the same pose and then we present them
-    // m_layer3D->UpdatePoses(m_frameState.predictedDisplayTime);
+    auto headsetRotation = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
+    if (headsetRotation.has_value()) {
+        Log::print("Updating actions while being in the {} state", VRManager::instance().Hooks->GetFramesSinceLastCameraUpdate() >= 3 ? "menu" : "in-game");
+        VRManager::instance().XR->UpdateActions(m_frameState.predictedDisplayTime, headsetRotation.value(), VRManager::instance().Hooks->GetFramesSinceLastCameraUpdate() >= 3);
+        // todo: update this as late as possible
+        // currently we only support non-AER presenting, aka we render two textures with the same pose and then we present them
+        // m_layer3D->UpdatePoses(m_frameState.predictedDisplayTime);
+    }
 }
 
 

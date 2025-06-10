@@ -15,6 +15,9 @@
         "optional": "cpp",
         "array": "cpp",
         "functional": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "span": "cpp",
+        "vector": "cpp",
+        "xstring": "cpp"
     }
 }

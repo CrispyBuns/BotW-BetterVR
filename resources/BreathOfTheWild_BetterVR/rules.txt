@@ -18,6 +18,7 @@ $cameraHeight = -0.5
 $linkOpacity = 1.0
 $enableDebugOverlay:int = 0
 $leftHanded:int = 0
+$buggyAngularVelocity:int = 0 # Whether the angular velocity is wrongly provided in local space. Possible Values: 0 is auto; 1 is forced on; 2 is forced off
 
 
 # Camera Mode
@@ -43,12 +44,14 @@ $cameraDistance = 0.0
 [Preset]
 name = Use VR Motion Controls & Wii U Gamepad Input (Recommended)
 category = Motion & Gamepad Controls
+condition = $cameraMode == 1
 default = 1
 $allowGamepadInput:int = 1
 
 [Preset]
 name = Only Use VR Controllers (some inputs might require the gamepad)
 category = Motion & Gamepad Controls
+condition = $cameraMode == 1
 $allowGamepadInput:int = 0
 
 

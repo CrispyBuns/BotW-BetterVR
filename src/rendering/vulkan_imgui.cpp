@@ -273,7 +273,7 @@ void RND_Vulkan::ImGuiOverlay::BeginFrame() {
 
     if (VRManager::instance().Hooks->m_entityDebugger) {
         VRManager::instance().Hooks->m_entityDebugger->DrawEntityInspector();
-        DrawDebugOverlays();
+        VRManager::instance().Hooks->DrawDebugOverlays();
     }
 }
 

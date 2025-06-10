@@ -16,24 +16,15 @@ public:
     std::optional<std::array<XrView, 2>> GetPoses() const { return m_currViews; }
     std::optional<XrFovf> GetFOV(OpenXR::EyeSide side) const { return m_currViews.transform([side](auto& views) { return views[side].fov; }); }
     std::optional<XrPosef> GetPose(OpenXR::EyeSide side) const { return m_currViews.transform([side](auto& views) { return views[side].pose; }); }
-    glm::fquat GetPlayerYaw() const {
-        // this is used to rotate the yaw of the player for some non-render logic (mainly Link's walking direction being offset)
-        if (!m_currViews) {
-            return glm::fquat(1.0f, 0.0f, 0.0f, 0.0f);
+    std::optional<glm::fquat> GetMiddlePose() const {
+        if (!m_currViews.has_value()) {
+            return std::nullopt;
         }
-        glm::fquat playerYaw = {};
-        if (m_currViews) {
-            auto& leftView = m_currViews.value()[OpenXR::EyeSide::LEFT];
-            auto& rightView = m_currViews.value()[OpenXR::EyeSide::RIGHT];
-            glm::fquat leftViewQuat = glm::fquat(leftView.pose.orientation.w, leftView.pose.orientation.x, leftView.pose.orientation.y, leftView.pose.orientation.z);
-            glm::fquat rightViewQuat = glm::fquat(rightView.pose.orientation.w, rightView.pose.orientation.x, rightView.pose.orientation.y, rightView.pose.orientation.z);
-            glm::fquat middleView = glm::cross(leftViewQuat, rightViewQuat);
-            
-            // Calculate the yaw from the middle view
-            playerYaw = glm::normalize(middleView);
-            playerYaw = glm::rotate(playerYaw, glm::radians(180.0f), glm::fvec3(0.0f, 1.0f, 0.0f));
-        }
-    };
+        auto views = m_currViews.value();
+        glm::fquat leftOrientation = glm::quat(views[OpenXR::EyeSide::LEFT].pose.orientation.w, views[OpenXR::EyeSide::LEFT].pose.orientation.x, views[OpenXR::EyeSide::LEFT].pose.orientation.y, views[OpenXR::EyeSide::LEFT].pose.orientation.z);
+        glm::fquat rightOrientation = glm::quat(views[OpenXR::EyeSide::RIGHT].pose.orientation.w, views[OpenXR::EyeSide::RIGHT].pose.orientation.x, views[OpenXR::EyeSide::RIGHT].pose.orientation.y, views[OpenXR::EyeSide::RIGHT].pose.orientation.z);
+        return glm::slerp(leftOrientation, rightOrientation, 0.5f);
+    }
 
     class Layer3D {
     public:
