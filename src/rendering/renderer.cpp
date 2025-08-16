@@ -68,15 +68,17 @@ void RND_Renderer::EndFrame() {
     }
 
     // todo: currently ignores m_frameState.shouldRender, but that's probably fine
-    XrCompositionLayerQuad layer2D = { XR_TYPE_COMPOSITION_LAYER_QUAD };
     m_presented2DLastFrame = m_layer2D && m_layer2D->HasCopied();
+    std::vector<XrCompositionLayerQuad> layer2D;
     // checkAssert(m_presented2DLastFrame, "2D layer should always be rendered!");
     if (m_presented2DLastFrame) {
         // The HUD/menus aren't eye-specific, so present the most recent one for both eyes at once
         m_layer2D->StartRendering();
         m_layer2D->Render();
         layer2D = m_layer2D->FinishRendering(m_frameState.predictedDisplayTime);
-        compositionLayers.emplace_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer2D));
+        for (auto& layer : layer2D) {
+            compositionLayers.emplace_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer));
+        }
     }
 
     XrFrameEndInfo frameEndInfo = { XR_TYPE_FRAME_END_INFO };
@@ -361,7 +363,7 @@ void RND_Renderer::Layer2D::Render() {
     m_copiedColor = false;
 }
 
-XrCompositionLayerQuad RND_Renderer::Layer2D::FinishRendering(XrTime predictedDisplayTime) {
+std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(XrTime predictedDisplayTime) {
     this->m_swapchain->FinishRendering();
 
     XrSpaceLocation spaceLocation = { XR_TYPE_SPACE_LOCATION };
@@ -398,8 +400,12 @@ XrCompositionLayerQuad RND_Renderer::Layer2D::FinishRendering(XrTime predictedDi
 
     // todo: change space to head space if we want to follow the head
     constexpr float MENU_SIZE = 1.0f;
+
+
+    std::vector<XrCompositionLayerQuad> layers;
+
     // clang-format off
-    return {
+    layers.push_back({
         .type = XR_TYPE_COMPOSITION_LAYER_QUAD,
         .layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,
         .space = VRManager::instance().XR->m_stageSpace,
@@ -416,6 +422,77 @@ XrCompositionLayerQuad RND_Renderer::Layer2D::FinishRendering(XrTime predictedDi
         },
         .pose = spaceLocation.pose,
         .size = { width * MENU_SIZE, height * MENU_SIZE }
-    };
+    });
     // clang-format on
+
+    // render layer twice to visualize the controller positions in debug mode
+    auto inputs = VRManager::instance().XR->m_input.load();
+
+    if (!(inputs.inGame.in_game && inputs.inGame.pose[OpenXR::EyeSide::LEFT].isActive && inputs.inGame.pose[OpenXR::EyeSide::RIGHT].isActive)) {
+        return layers;
+    }
+
+    return layers;
+
+    auto movePoseToHandPosition = [](XrPosef& inputPose) {
+        glm::fquat modifiedRotation = ToGLM(inputPose.orientation);
+        glm::fvec3 modifiedPosition = ToGLM(inputPose.position);
+
+        modifiedRotation *= glm::angleAxis(glm::radians(-45.0f), glm::fvec3(1, 0, 0));
+
+
+        inputPose.orientation = ToXR(modifiedRotation);
+        inputPose.position = ToXR(modifiedPosition);
+    };
+
+    if ((inputs.inGame.poseLocation[OpenXR::EyeSide::LEFT].locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == 1 || (inputs.inGame.poseLocation[OpenXR::EyeSide::LEFT].locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == 1) {
+        movePoseToHandPosition(inputs.inGame.poseLocation[OpenXR::EyeSide::LEFT].pose);
+        // clang-format off
+        layers.push_back({
+            .type = XR_TYPE_COMPOSITION_LAYER_QUAD,
+            .layerFlags = 0,
+            .space = VRManager::instance().XR->m_stageSpace,
+            .eyeVisibility = XR_EYE_VISIBILITY_BOTH,
+            .subImage = {
+                .swapchain = this->m_swapchain->GetHandle(),
+                .imageRect = {
+                    .offset = { 0, 0 },
+                    .extent = {
+                        .width = (int32_t)this->m_swapchain->GetWidth(),
+                        .height = (int32_t)this->m_swapchain->GetHeight()
+                    }
+                }
+            },
+            .pose = inputs.inGame.poseLocation[OpenXR::EyeSide::LEFT].pose,
+            .size = { 0.15f, 0.15f }
+        });
+        // clang-format on
+    }
+
+    if ((inputs.inGame.poseLocation[OpenXR::EyeSide::RIGHT].locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == 1 || (inputs.inGame.poseLocation[OpenXR::EyeSide::RIGHT].locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == 1) {
+        movePoseToHandPosition(inputs.inGame.poseLocation[OpenXR::EyeSide::RIGHT].pose);
+
+        // clang-format off
+        layers.push_back({
+            .type = XR_TYPE_COMPOSITION_LAYER_QUAD,
+            .layerFlags = 0,
+            .space = VRManager::instance().XR->m_stageSpace,
+            .eyeVisibility = XR_EYE_VISIBILITY_BOTH,
+            .subImage = {
+                .swapchain = this->m_swapchain->GetHandle(),
+                .imageRect = {
+                    .offset = { 0, 0 },
+                    .extent = {
+                        .width = (int32_t)this->m_swapchain->GetWidth(),
+                        .height = (int32_t)this->m_swapchain->GetHeight()
+                    }
+                }
+            },
+            .pose = inputs.inGame.poseLocation[OpenXR::EyeSide::RIGHT].pose,
+            .size = { 0.15f, 0.15f }
+        });
+        // clang-format on
+    }
+
+    return layers;
 }

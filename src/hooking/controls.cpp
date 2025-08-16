@@ -108,8 +108,12 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.cancel, VPAD_BUTTON_B);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.interact, VPAD_BUTTON_Y);
 
-        newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[0], VPAD_BUTTON_A);
-        newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[1], VPAD_BUTTON_A);
+        if (inputs.inGame.grabState[0].lastEvent == GrabButtonState::Event::ShortPress || inputs.inGame.grabState[1].lastEvent == GrabButtonState::Event::ShortPress) {
+            newXRBtnHold |= VPAD_BUTTON_A;
+        }
+
+        //newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[0], VPAD_BUTTON_A);
+        //newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[1], VPAD_BUTTON_A);
     }
     else {
         newXRBtnHold |= mapXRButtonToVpad(inputs.inMenu.map, VPAD_BUTTON_MINUS);
@@ -212,9 +216,9 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     vpadStatus.tpData.validity = 3;
 
     // motion
-    vpadStatus.dir.x = {1, 0, 0};
-    vpadStatus.dir.y = {0, 1, 0};
-    vpadStatus.dir.z = {0, 0, 1};
+    vpadStatus.dir.x = glm::fvec3{1, 0, 0};
+    vpadStatus.dir.y = glm::fvec3{0, 1, 0};
+    vpadStatus.dir.z = glm::fvec3{0, 0, 1};
     vpadStatus.accXY = {1.0f, 0.0f};
 
     // write the input back to VPADStatus

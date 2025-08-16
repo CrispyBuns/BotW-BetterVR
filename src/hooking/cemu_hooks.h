@@ -34,13 +34,18 @@ public:
         osLib_registerHLEFunction("coreinit", "hook_ApplyCameraRotation", &hook_ApplyCameraRotation);
         osLib_registerHLEFunction("coreinit", "hook_OSReportToConsole", &hook_OSReportToConsole);
 
+        osLib_registerHLEFunction("coreinit", "hook_DropEquipment", &hook_DropEquipment);
         osLib_registerHLEFunction("coreinit", "hook_EnableWeaponAttackSensor", &hook_EnableWeaponAttackSensor);
         osLib_registerHLEFunction("coreinit", "hook_EquipWeapon", &hook_EquipWeapon);
+        osLib_registerHLEFunction("coreinit", "hook_DropWeaponLogging", &hook_DropWeaponLogging);
 
         osLib_registerHLEFunction("coreinit", "hook_SetActorOpacity", &hook_SetActorOpacity);
         osLib_registerHLEFunction("coreinit", "hook_UseCameraDistance", &hook_UseCameraDistance);
 
         osLib_registerHLEFunction("coreinit", "hook_updateCameraOLD", &hook_updateCameraOLD);
+
+        osLib_registerHLEFunction("coreinit", "hook_ModifyBoneMatrix", &hook_ModifyBoneMatrix);
+        osLib_registerHLEFunction("coreinit", "hook_ModifyModelBoneMatrix", &hook_ModifyModelBoneMatrix);
     };
     ~CemuHooks() {
         FreeLibrary(m_cemuHandle);
@@ -53,6 +58,11 @@ public:
     std::unique_ptr<class EntityDebugger> m_entityDebugger;
     static std::array<class WeaponMotionAnalyser, 2> m_motionAnalyzers;
     static std::array<uint32_t, 2> m_heldWeapons;
+    static std::array<uint32_t, 2> m_heldWeaponsLastUpdate;
+    static uint32_t s_playerMtxAddress;
+    static glm::fvec3 s_playerPos;
+    static glm::fquat s_cameraRotation;
+    static glm::fquat s_forwardRotation;
 
     static void DrawDebugOverlays();
 
@@ -87,10 +97,15 @@ private:
     static void hook_SetActorOpacity(PPCInterpreter_t* hCPU);
     static void hook_UseCameraDistance(PPCInterpreter_t* hCPU);
 
+    static void hook_DropEquipment(PPCInterpreter_t* hCPU);
     static void hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU);
     static void hook_EquipWeapon(PPCInterpreter_t* hCPU);
+    static void hook_DropWeaponLogging(PPCInterpreter_t* hCPU);
 
     static void hook_OSReportToConsole(PPCInterpreter_t* hCPU);
+
+    static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU);
+    static void hook_ModifyModelBoneMatrix(PPCInterpreter_t* hCPU);
 
 public:
     template <typename T>

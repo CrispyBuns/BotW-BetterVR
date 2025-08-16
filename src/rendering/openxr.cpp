@@ -385,6 +385,7 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
     newState.inGame.in_game = !inMenu;
     newState.inGame.inputTime = predictedFrameTime;
     newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
+    newState.inGame.grabState = m_input.load().inGame.grabState;
 
     if (inMenu) {
         XrActionStateGetInfo getScrollInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
@@ -485,9 +486,64 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
             newState.inGame.grab[side] = { XR_TYPE_ACTION_STATE_BOOLEAN };
             checkXRResult(xrGetActionStateBoolean(m_session, &getGrabInfo, &newState.inGame.grab[side]), "Failed to get grab action value!");
 
-            if (newState.inGame.grab[side].currentState == XR_TRUE) {
-                newState.inGame.lastPickupSide = side;
+
+            // Grab button state logic
+            auto& grabAction = newState.inGame.grab[side];
+            auto& gs = newState.inGame.grabState[side];
+            gs.resetFrameFlags();
+            if (grabAction.isActive == XR_FALSE) {
+                continue;
             }
+
+            // detect long, short and double presses
+            constexpr std::chrono::milliseconds longPressThreshold{ 600 };
+            constexpr std::chrono::milliseconds doublePressWindow{ 350 };
+
+            const bool down = (grabAction.currentState == XR_TRUE);
+            const auto now = std::chrono::steady_clock::now();
+
+            // rising edge
+            if (down && !gs.wasDownLastFrame) {
+                gs.pressStartTime = now;
+                gs.longFired = false;
+
+                if (gs.waitingForSecond) // second press started in time to double
+                {
+                    gs.waitingForSecond = false;
+                    gs.longFired = true;
+                    gs.lastEvent = GrabButtonState::Event::DoublePress;
+                }
+            }
+
+            // pressed state
+            if (down) {
+                if (!gs.longFired && (now - gs.pressStartTime) >= longPressThreshold) {
+                    gs.longFired = true;
+                    gs.lastEvent = GrabButtonState::Event::LongPress;
+                }
+            }
+
+            // falling edge
+            if (!down && gs.wasDownLastFrame) {
+                if (!gs.longFired) // ignore if we already counted a long press
+                {
+                    gs.waitingForSecond = true; // open double-press timing window
+                    gs.lastReleaseTime = now;
+                }
+                else {
+                    // long press path finished
+                    gs.longFired = false;
+                }
+            }
+
+            // register short press since the double press timing window has expired nor was a long press registered
+            if (gs.waitingForSecond && !down && (now - gs.lastReleaseTime) > doublePressWindow) {
+                gs.waitingForSecond = false;
+                gs.lastEvent = GrabButtonState::Event::ShortPress;
+            }
+
+            // store current down state for the next frame
+            gs.wasDownLastFrame = down;
         }
 
         XrActionStateGetInfo getMap = { XR_TYPE_ACTION_STATE_GET_INFO };

@@ -254,6 +254,12 @@ struct BEVec3 : BETypeCompatible {
     bool operator==(const BEVec3& other) const {
         return x == other.x && y == other.y && z == other.z;
     }
+
+    void operator=(const glm::fvec3& other) {
+        x = other.x;
+        y = other.y;
+        z = other.z;
+    }
 };
 
 struct BEMatrix34 : BETypeCompatible {
@@ -310,12 +316,32 @@ struct BEMatrix34 : BETypeCompatible {
         return { pos_x, pos_y, pos_z };
     }
 
+    void setPos(glm::fvec3 pos) {
+        pos_x = pos.x;
+        pos_y = pos.y;
+        pos_z = pos.z;
+    }
+
     glm::fquat getRotLE() const {
         return glm::quat_cast(glm::fmat3(
             x_x.getLE(), y_x.getLE(), z_x.getLE(),
             x_y.getLE(), y_y.getLE(), z_y.getLE(),
             x_z.getLE(), y_z.getLE(), z_z.getLE()
         ));
+    }
+
+	void setRotLE(glm::fquat rotation) {
+        glm::fmat3 rotMat = glm::mat3_cast(rotation);
+
+        x_x = rotMat[0][0];
+        y_x = rotMat[0][1];
+        z_x = rotMat[0][2];
+        x_y = rotMat[1][0];
+        y_y = rotMat[1][1];
+        z_y = rotMat[1][2];
+        x_z = rotMat[2][0];
+        y_z = rotMat[2][1];
+        z_z = rotMat[2][2];
     }
 
     void setLE(std::array<std::array<float, 4>, 3> mtx) {
@@ -441,9 +467,9 @@ struct BESeadProjection {
     BEType<bool> deviceDirty;
     BEType<uint8_t> pad0;
     BEType<uint8_t> pad1;
-    BEType<uint32_t> devicePosture;
     BEMatrix44 matrix;
     BEMatrix44 deviceMatrix;
+    BEType<uint32_t> devicePosture;
     BEType<float> deviceZScale;
     BEType<float> deviceZOffset;
     BEType<uint32_t> __vftable;

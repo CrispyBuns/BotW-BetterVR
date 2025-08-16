@@ -30,11 +30,13 @@ BuggyAngularVelocitySetting:
 .int $buggyAngularVelocity
 
 vr_updateSettings:
-addi r1, r1, -0x08
-stw r3, 0x04(r1)
-stw r5, 0x08(r1)
-mflr r5
-stw r5, 0x0C(r1)
+mflr r0
+stwu r1, -0x20(r1)
+stw r0, 0x24(r1)
+stw r3, 0x1C(r1)
+stw r4, 0x18(r1)
+stw r5, 0x14(r1)
+stw r6, 0x10(r1)
 
 lis r5, data_settingsOffset@ha
 addi r5, r5, data_settingsOffset@l
@@ -48,13 +50,18 @@ bne notSpawnActor
 ;bl vr_spawnEquipment
 notSpawnActor:
 
+;bl checkIfDropWeapon
+
+
+lwz r6, 0x10(r1)
+lwz r5, 0x14(r1)
+lwz r4, 0x18(r1)
+lwz r3, 0x1C(r1)
+lwz r0, 0x24(r1)
+addi r1, r1, 0x20
+mtlr r0
+
 li r4, -1 ; Execute the instruction that got replaced
+blr
 
-lwz r5, 0x0C(r1)
-mtlr r5
-lwz r5, 0x08(r1)
-lwz r3, 0x04(r1)
-addi r1, r1, 0x08
-b 0x031faaf4
-
-0x031FAAF0 = ba vr_updateSettings
+0x031FAAF0 = bla vr_updateSettings

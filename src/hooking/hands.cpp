@@ -5,13 +5,19 @@
 
 std::array<WeaponMotionAnalyser, 2> CemuHooks::m_motionAnalyzers = {};
 std::array<uint32_t, 2> CemuHooks::m_heldWeapons = { 0, 0 };
+std::array<uint32_t, 2> CemuHooks::m_heldWeaponsLastUpdate = { 0, 0 };
+
+std::array s_cameraRotations = {
+    glm::identity<glm::fquat>(),
+    glm::identity<glm::fquat>()
+};
+std::array s_cameraPositions = {
+    glm::fvec3(0.0f),
+    glm::fvec3(0.0f)
+};
 
 static void ModifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjustedMtx, glm::fquat cameraRotation, glm::fvec3 cameraPosition) {
     OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
-    //auto views = VRManager::instance().XR->GetRenderer()->GetMiddlePosePos();
-    //if (!views.has_value()) {
-    //    return;
-    //}
 
     glm::fvec3 views = glm::fvec3(0, 0, 0);
 
@@ -56,6 +62,7 @@ static void ModifyWeaponMtxToVRPose(OpenXR::EyeSide side, BEMatrix34& toBeAdjust
     glm::fvec3 finalPos = cameraPosition + rotatedControllerPos;
 
     //Log::print("!! camera pos = {} rotation = {}", finalPos, views);
+    //finalPos = v_cam + glm::fvec3(0, 1, 0);
 
     toBeAdjustedMtx.pos_x = finalPos.x;
     toBeAdjustedMtx.pos_y = finalPos.y;
@@ -97,7 +104,7 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
     glm::fvec3 cameraAt = camera.at.getLE();
     glm::fquat lookAtQuat = glm::quatLookAtRH(glm::normalize(cameraAt - cameraPos), { 0.0, 1.0, 0.0 });
     glm::fvec3 lookAtPos = cameraPos;
-    lookAtPos.y += CemuHooks::GetSettings().playerHeightSetting.getLE();
+    lookAtPos.y += GetSettings().playerHeightSetting.getLE();
 
     // read bone name
     if (boneNamePtr == 0)
@@ -112,6 +119,7 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
         OpenXR::EyeSide side = isLeftHandWeapon ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
 
         m_heldWeapons[side] = targetActorPtr;
+        m_heldWeaponsLastUpdate[side] = 0;
 
         BEMatrix34 weaponMtx = {};
         readMemory(weaponMtxPtr, &weaponMtx);
@@ -121,24 +129,96 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
 
         ModifyWeaponMtxToVRPose(side, weaponMtx, lookAtQuat, lookAtPos);
 
+        s_cameraPositions[side] = lookAtPos;
+        s_cameraRotations[side] = lookAtQuat;
+
+
         // prevent weapon transparency
         BEType<float> modelOpacity = 1.0f;
+        BEType<float> negativeOpacity = 0.0f;
         writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacity), &modelOpacity);
         writeMemory(targetActorPtr + offsetof(ActorWiiU, startModelOpacity), &modelOpacity);
+        writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
         uint8_t opacityOrDoFlushOpacityToGPU = 1;
         writeMemory(targetActorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
 
-        writeMemory(weaponMtxPtr, &weaponMtx);
+        //writeMemory(weaponMtxPtr, &weaponMtx);
         writeMemory(modelBindInfoMtxPtr, &modelBindInfoMtx);
+
+        Weapon targetActor = {};
+        readMemory(targetActorPtr, &targetActor);
+
+        // check if weapon is held and if the grip button is held, drop it
+        auto input = VRManager::instance().XR->m_input.load();
+        auto& grabState = input.inGame.grabState[side];
+
+        if (input.inGame.in_game && grabState.lastEvent == GrabButtonState::Event::DoublePress) {
+            Log::print("!! Dropping weapon {} due to double press on grab button", targetActor.name.getLE().c_str());
+            hCPU->gpr[11] = 1;
+            hCPU->gpr[9] = 1;
+            hCPU->gpr[13] = isLeftHandWeapon ? 1 : 0; // set the hand index to 0 for left hand, 1 for right hand
+            return;
+        }
+        // Support for long press (placeholder)
+        if (input.inGame.in_game && grabState.lastEvent == GrabButtonState::Event::LongPress) {
+            Log::print("!! Long press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
+            // TODO: Implement long press action (e.g., temporarily bind item)
+            //grabState.longPress = false;
+        }
+        // Support for short press (placeholder)
+        if (input.inGame.in_game && grabState.lastEvent == GrabButtonState::Event::ShortPress) {
+            Log::print("!! Short press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
+            // TODO: Implement short press action (e.g., cycle weapon)
+        }
 
         hCPU->gpr[9] = 1;
     }
 }
 
+// todo: this only runs when it's shown for the first time!
+void CemuHooks::hook_CreateNewScreen(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    const char* screenName = (const char*)(s_memoryBaseAddress + hCPU->gpr[7]);
+    ScreenId screenId = (ScreenId)hCPU->gpr[5];
+    Log::print("!! Switching to new screen \"{}\" with ID {:08X}...", screenName, std::to_underlying(screenId));
+
+    // todo: When a pickup screen is shown, we should track if the user does a short grip press, and if it was the left and right hand.
+    if (screenId == ScreenId::PickUp_00) {
+         Log::print("!! PickUp screen detected, waiting for grip button press to bind item to hand...");
+    }
+}
+
+// todo: this function does nothing, we use ChangeWeaponMtx instead
+void CemuHooks::hook_DropEquipment(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    if (GetSettings().IsThirdPersonMode()) {
+        return;
+    }
+
+    uint32_t weaponPtr = hCPU->gpr[3];
+    uint32_t parentActorPtr = hCPU->gpr[4];
+    uint32_t heldIndex = hCPU->gpr[5]; // this is either 0 or 1 depending on which hand the weapon is in
+    bool isHeldByPlayer = hCPU->gpr[6] == 0;
+
+    Weapon weapon = {};
+    readMemory(weaponPtr, &weapon);
+
+    //// check if weapon is held and if the grip button is held, drop it
+    //auto input = VRManager::instance().XR->m_input.load();
+    //if (input.inGame.in_game && isHeldByPlayer && input.inGame.grab[heldIndex].currentState) {
+    //    // if the weapon is held by the player and the grip button is pressed, drop it
+    //    //Log::print("!! Dropping weapon {} because grip button is pressed", weapon.name.getLE());
+    //    hCPU->gpr[7] = 1;
+    //    return;
+    //}
+}
+
 void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
 
-    if (CemuHooks::GetSettings().IsThirdPersonMode()) {
+    if (GetSettings().IsThirdPersonMode()) {
         return;
     }
 
@@ -175,7 +255,7 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
     m_motionAnalyzers[heldIndex].Update(state.inGame.poseLocation[heldIndex], state.inGame.poseVelocity[heldIndex], headset.value(), state.inGame.inputTime);
 
     // Use the analysed motion to determine whether the weapon is swinging or stabbing, and whether the attackSensor should be active this frame
-    if (isHeldByPlayer && m_motionAnalyzers[heldIndex].IsAttacking()) {
+    if (isHeldByPlayer && (m_motionAnalyzers[heldIndex].IsAttacking() || true)) {
         m_motionAnalyzers[heldIndex].SetHitboxEnabled(true);
         //Log::print("!! Activate sensor for {}: isHeldByPlayer={}, weaponType={}", heldIndex, isHeldByPlayer, (int)weaponType);
         weapon.setupAttackSensor.resetAttack = 1;
@@ -201,24 +281,48 @@ void CemuHooks::hook_EquipWeapon(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
 
     auto input = VRManager::instance().XR->m_input.load();
-    uint32_t toBeEquipedSlot = hCPU->gpr[25];
+    // Check both hands for a short press to pick up weapon
+    for (int side = 0; side < 2; ++side) {
+        auto& grabState = input.inGame.grabState[side];
+        // todo: Make sword smaller while its equipped. I think this might be a member value, but otherwise we can just scale the weapon matrix.
 
-    if (toBeEquipedSlot == 0 || toBeEquipedSlot == 1) {
-        //hCPU->gpr[25] = (input.inGame.lastPickupSide == OpenXR::EyeSide::LEFT) ? 1 : 0;
+        //if (input.inGame.in_game && grabState.shortPress) {
+        //    // Set the slot to equip based on which hand was pressed
+        //    hCPU->gpr[25] = side; // 0 = LEFT, 1 = RIGHT
+        //    Log::print("!! Short grip press detected on side {}: equipping weapon", side);
+        //    grabState.shortPress = false; // Reset after use
+        //    return;
+        //}
     }
+    // Default behavior if no short press
+    // (leave as is, or add fallback logic if needed)
+}
 
-    //switch (hCPU->gpr[25]) {
-    //    case 1: {
-    //        hCPU->gpr[25] = 0;
-    //        break;
-    //    }
-    //    case 0: {
-    //        hCPU->gpr[25] = 1;
-    //    }
-    //    default: {
-    //        break;
-    //    }
-    //}
+
+void CemuHooks::hook_DropWeaponLogging(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    uint32_t actorPtr = hCPU->gpr[3];
+
+    PlayerOrEnemy player;
+    readMemory(actorPtr, &player);
+
+    uint32_t actorLinkPtr = actorPtr + offsetof(ActorWiiU, name) + offsetof(sead::FixedSafeString40, c_str);
+    uint32_t actorNamePtr = 0;
+    readMemoryBE(actorLinkPtr, &actorNamePtr);
+    if (actorNamePtr == 0)
+        return;
+    char* actorName = (char*)s_memoryBaseAddress + actorNamePtr;
+
+    uint32_t weaponIdx = hCPU->gpr[4];
+    BEVec3 position;
+    readMemory(hCPU->gpr[5], &position);
+    uint32_t a4 = hCPU->gpr[6];
+    uint32_t a5 = hCPU->gpr[7];
+    uint32_t a6 = hCPU->gpr[8];
+    uint32_t a7 = hCPU->gpr[9];
+
+    Log::print("!! {} ({:08X}) is dropping weapon with idx={}, position={}, a4={}, a5={}, a6={}, a7={}", actorName, actorPtr, weaponIdx, position, a4, a5, a6, a7);
 }
 
 void CemuHooks::hook_ModifyHandModelAccessSearch(PPCInterpreter_t* hCPU) {
@@ -249,4 +353,261 @@ void CemuHooks::DrawDebugOverlays() {
         }
     }
     ImGui::End();
+}
+
+void CemuHooks::hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    uint32_t gsysModelPtr = hCPU->gpr[3];
+    uint32_t matrixPtr = hCPU->gpr[4];
+    uint32_t scalePtr = hCPU->gpr[5];
+    uint32_t boneNamePtr = hCPU->gpr[6];
+    uint32_t boneIdx = hCPU->gpr[27];
+
+    sead::FixedSafeString100 modelName = getMemory<sead::FixedSafeString100>(gsysModelPtr + 0x128);
+
+    BEMatrix34 matrix = {};
+    readMemory(matrixPtr, &matrix);
+    BEVec3 scale = {};
+    readMemory(scalePtr, &scale);
+
+    if (gsysModelPtr == 0 || matrixPtr == 0 || scalePtr == 0) {
+        //Log::print("!! Bone name couldn't be found for bone #{} for model {}", boneIdx, modelName.getLE());
+        return;
+    }
+
+    if (boneNamePtr == 0) {
+        // #53 is neck
+        // #90 is
+        // #93 is leg
+        // #106 is left leg
+        // #107 is left ankle
+        // #108 is also left leg
+        // #110 is left foot
+        // #111 is left toes
+        // #112 is right leg
+        // #113 is right ankle
+        // #114 is leg, ankle downwards
+        // #115
+        //if (boneIdx == 90) {
+        //    matrix.setPos(glm::fvec3(0, 0.5, 0));
+        //    matrix.setRotLE(glm::identity<glm::fquat>());
+        //    writeMemory(matrixPtr, &matrixPtr);
+        //}
+
+        //Log::print("!! Bone name couldn't be found for bone #{} for model {}", boneIdx, modelName.getLE());
+        Log::print("!! Bone index #{} for model {}", boneIdx, modelName.getLE());
+        return;
+    }
+    else {
+        char* boneNamePtrChar = (char*)(s_memoryBaseAddress + boneNamePtr);
+        std::string_view boneName(boneNamePtrChar);
+        //Log::print("!! Bone index #{} ({}) for model {}", boneIdx, boneName, modelName.getLE());
+    }
+
+    if (modelName.getLE() != "GameROMPlayer") {
+        return;
+    }
+
+    char* boneNamePtrChar = (char*)(s_memoryBaseAddress + boneNamePtr);
+    std::string_view boneName(boneNamePtrChar);
+
+    bool leftOrRightSide = boneName.ends_with("_L");
+
+    OpenXR::EyeSide side = leftOrRightSide ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+    OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
+
+    glm::fvec3 controllerPos = glm::fvec3(0.0f);
+    glm::fquat controllerQuat = glm::identity<glm::fquat>();
+    if (inputs.inGame.in_game && inputs.inGame.pose[side].isActive) {
+        auto& handPose = inputs.inGame.poseLocation[side];
+
+        if (handPose.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) {
+            controllerPos = ToGLM(handPose.pose.position);
+        }
+        if (handPose.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) {
+            controllerQuat = ToGLM(handPose.pose.orientation);
+        }
+    }
+
+    static glm::fquat debug_rotatingAngles = glm::identity<glm::fquat>();
+    debug_rotatingAngles = debug_rotatingAngles * glm::angleAxis(glm::radians(0.1f), glm::fvec3(0, 0, 1));
+
+    static glm::fvec3 debug_movingPositions = glm::fvec3();
+    static bool isMovingUp = true;
+    glm::fvec3 moveAxis = glm::fvec3(0.0f, 0.0f, 0.5f);
+    float speedOverSecond = 1.0f / 60.0f;
+
+    glm::fvec3 dir = glm::normalize(moveAxis);
+    float step = speedOverSecond * glm::length(moveAxis);
+    if (isMovingUp) {
+        debug_movingPositions += dir * step;
+        float t = glm::dot(debug_movingPositions, dir);
+        if (t >= 0.5f) {
+            debug_movingPositions = dir * 0.5f;
+            isMovingUp = false;
+        }
+    }
+    else {
+        debug_movingPositions -= dir * step;
+        float t = glm::dot(debug_movingPositions, dir);
+        if (t <= -0.5f) {
+            debug_movingPositions = dir * -0.5f;
+            isMovingUp = true;
+        }
+    }
+
+    debug_movingPositions = glm::fvec3(0, 1, 0);
+
+
+    if (boneName == "Root") {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName == "Skl_Root") {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+
+        matrix.setPos(glm::fvec3(0.0f, 0.99426f, 0.0f));
+    }
+    else if (boneName.starts_with("Spine_1")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+        matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-90.0f), glm::fvec3(1, 0, 0)));
+        matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-90.0f), glm::fvec3(0, 0, 1)));
+    }
+    else if (boneName.starts_with("Spine_2")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+
+        matrix.setPos(glm::fvec3(0.13600f, 0.0f, 0.0f));
+    }
+    else if (boneName == "Neck") {
+        //matrix.setPos(glm::fvec3(0.26326f, 0.0f, 0.0f));
+        matrix.setPos(glm::fvec3(-0.46326f, 0.0f, 0.0f));
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName == "Head") {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+
+        matrix.setPos(glm::fvec3(0.12447f, 0.0f, 0.0f));
+    }
+    else if (boneName.starts_with("Clavicle_Assist")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Clavicle")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+
+        if (leftOrRightSide) {
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(270.0f), glm::fvec3(1, 0, 0)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(0, 0, 1)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-90.0f), glm::fvec3(0, 1, 0)));
+        }
+        else {
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(270.0f), glm::fvec3(1, 0, 0)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(0, 0, 1)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-90.0f), glm::fvec3(0, 1, 0)));
+        }
+    }
+    else if (boneName.starts_with("Arm_1_Assist")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Arm_1")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Elbow")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Wrist_Assist")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Arm_2")) {
+        matrix.setPos(glm::fvec3());
+        matrix.setRotLE(glm::identity<glm::fquat>());
+    }
+    else if (boneName.starts_with("Wrist")) {
+        matrix.setRotLE(glm::identity<glm::fquat>());
+
+        if (leftOrRightSide) {
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-90.0f), glm::fvec3(0, 1, 0)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(0, 0, 1)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(1, 0, 0)));
+        }
+        else {
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(90.0f), glm::fvec3(0, 1, 0)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(0, 0, 1)));
+            matrix.setRotLE(matrix.getRotLE() * glm::angleAxis(glm::radians(-180.0f), glm::fvec3(0, 1, 0)));
+        }
+
+        // rotate with controller. However it has to be inversed I think?
+        auto inversedAxisControllerQuat = controllerQuat;
+
+        glm::fvec3 cameraRotation = glm::eulerAngles(glm::inverse(CemuHooks::s_forwardRotation));
+
+        // put a minus on the pitch axis
+        glm::fvec3 eulerAnglesController = glm::eulerAngles(inversedAxisControllerQuat);
+        eulerAnglesController.x = -eulerAnglesController.x;
+        eulerAnglesController.y += (cameraRotation.x >= 3.0f ? cameraRotation.y : -cameraRotation.y+glm::radians(180.0f));
+        eulerAnglesController.z = -eulerAnglesController.z;
+        inversedAxisControllerQuat = glm::fquat(eulerAnglesController);
+
+        // todo: what's the correct hand holding offset here?
+        inversedAxisControllerQuat = inversedAxisControllerQuat * glm::angleAxis(glm::radians(70.0f), glm::fvec3(1, 0, 0));
+
+        auto neutralRotation = matrix.getRotLE();
+        neutralRotation *= glm::inverse(inversedAxisControllerQuat);
+
+        matrix.setRotLE(neutralRotation);
+
+        // ----------------------------------------------------------------------------------------
+        glm::fvec3 rotatedControllerPos = controllerPos * glm::inverse(CemuHooks::s_forwardRotation);
+
+        if (leftOrRightSide) {
+            rotatedControllerPos -= glm::fvec3(-0.02769f, 0.00002f, 0.10690f);
+        }
+        else {
+            rotatedControllerPos -= glm::fvec3(0.02769f, 0.00002f, 0.10690f);
+        }
+
+        rotatedControllerPos -= glm::fvec3(0.0f, 0.99426f + 0.13600f, 0.0f);
+
+        matrix.setPos(rotatedControllerPos);
+    }
+
+    writeMemory(matrixPtr, &matrix);
+}
+
+void CemuHooks::hook_ModifyModelBoneMatrix(PPCInterpreter_t* hCPU) {
+    // we replaced a bctr instruction, and this is the replacement basically
+    hCPU->instructionPointer = hCPU->sprNew.CTR;
+
+    uint32_t modelUnitPtr = hCPU->gpr[3]; // not 100% sure, but likely
+    uint32_t gsysModelPtr = hCPU->gpr[12];
+    uint32_t matrixPtr = hCPU->gpr[4];
+    uint32_t scalePtr = hCPU->gpr[5];
+    uint32_t boneIdx = hCPU->gpr[6];
+
+    if (modelUnitPtr == 0 || gsysModelPtr == 0 || matrixPtr == 0 || scalePtr == 0) {
+        Log::print("!! Something's invalid");
+        return;
+    }
+
+    sead::FixedSafeString100 modelName = getMemory<sead::FixedSafeString100>(gsysModelPtr + 0x128);
+
+    //Log::print("!! Setting ModelUnit's bone #{} from model {}", boneIdx, modelName.getLE());
+
+    BEMatrix34 matrix;
+    readMemory(matrixPtr, &matrix);
+
+    if (modelName.getLE().starts_with("Armor_067")) {
+        //matrix.setPos(matrix.getPos().getLE());
+        //writeMemory(matrixPtr, &matrix);
+    }
 }

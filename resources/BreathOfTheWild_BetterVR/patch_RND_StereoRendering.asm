@@ -584,6 +584,10 @@ blr
 ; ---------------- RENDER CAMERA ----------------
 ;0x03AEA94C = agl__lyr__RenderInfo__RenderInfo_returnAddr:
 
+const_0:
+.float 0.0
+0x10323118 = const_epsilon:
+
 0x105978C4 = sDefaultCameraMatrix:
 
 modifiedCopy_seadLookAtCamera:
@@ -619,17 +623,38 @@ addi r3, r3, sDefaultCameraMatrix@l
 cmpwi r0, 0
 beqlr
 mr r3, r0
+
+; camera.pos.x.getLE() != 0.0f
+lis r12, const_0@ha
+lfs f12, const_0@l(r12)
+lfs f13, 0x34(r3)
+fcmpu cr0, f12, f13
+beqlr
+
+; std::fabs(camera.at.z.getLE()) < std::numeric_limits<float>::epsilon()
+fmr f13, f1
+lfs f1, 0x48(r3)
+.int 0xFC200A10 ; fabs f1, f1
+fmr f12, f1
+fmr f1, f13
+lis r12, const_epsilon@ha
+lfs f13, const_epsilon@l(r12)
+fcmpu cr0, f12, f13
+bltlr
+
 lis r11, currentEyeSide@ha
 lwz r11, currentEyeSide@l(r11)
 lis r12, modifiedCopy_seadLookAtCamera@ha
 addi r12, r12, modifiedCopy_seadLookAtCamera@l
 ba import.coreinit.hook_GetRenderCamera
+blr
 
 returnDefaultCamera:
 addi r3, r12, 4
 blr
 
 0x03AE4AA0 = ba agl__lyr__Layer__getRenderCamera
+
 
 modifiedCopy_seadPerspectiveProjection:
 .byte 0,0,0,0 ; dirty, deviceDirty, pad, pad
@@ -644,7 +669,7 @@ modifiedCopy_seadPerspectiveProjection:
 .float 0,0,0,0
 .float 0 ; deviceZScale
 .float 0 ; deviceZOffset
-.int 0x1337 ; vtable
+.int 0x1027B54C ; vtable
 .float 0 ; near
 .float 25000 ; far
 .float 0.8726647 ; angle
@@ -655,6 +680,8 @@ modifiedCopy_seadPerspectiveProjection:
 .float 0 ; offsetX
 .float 0 ; offsetY
 
+
+0x1027B54C = seadPerspectiveProjection_vtbl:
 0x10597928 = sDefaultSeadProjection:
 
 agl__lyr__Layer__getRenderProjection:
@@ -672,17 +699,27 @@ addi r3, r3, sDefaultSeadProjection@l
 cmpwi r12, 0
 beqlr
 mr r3, r12
+
+; prevent modifying anything but sead::PerspectiveProjection
+lwz r12, 0x90(r3)
+lis r11, seadPerspectiveProjection_vtbl@ha
+addi r11, r11, seadPerspectiveProjection_vtbl@l
+cmpw r12, r11
+bnelr
+
 lis r12, currentEyeSide@ha
 lwz r0, currentEyeSide@l(r12)
 lis r12, modifiedCopy_seadPerspectiveProjection@ha
 addi r12, r12, modifiedCopy_seadPerspectiveProjection@l
 ba import.coreinit.hook_GetRenderProjection
+blr
 
 useSpecialProjection:
 lwz r3, 0xEC(r12)
 blr
 
 0x03AE4AEC = ba agl__lyr__Layer__getRenderProjection
+
 
 
 0x02C0378C = orig_act_GetCamera:

@@ -9,6 +9,8 @@
 
 std::mutex g_actorListMutex;
 std::unordered_map<uint32_t, std::pair<std::string, uint32_t>> s_knownActors;
+glm::fvec3 CemuHooks::s_playerPos = {};
+uint32_t CemuHooks::s_playerMtxAddress = 0;
 
 void CemuHooks::hook_UpdateActorList(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -46,6 +48,13 @@ void CemuHooks::hook_UpdateActorList(PPCInterpreter_t* hCPU) {
     //     // writeMemoryBE(hCPU->gpr[6] + offsetof(ActorWiiU, velocity.y), &velocityY);
     //     s_currActorPtrs.emplace_back(hCPU->gpr[6]);
     // }
+     if (strcmp(actorName, "GameROMPlayer") == 0) {
+         BEMatrix34 mtx = {};
+         uint32_t actorMtxPtr = hCPU->gpr[6] + offsetof(ActorWiiU, mtx);
+         readMemory(actorMtxPtr, &mtx);
+         s_playerPos = mtx.getPos().getLE();
+         s_playerMtxAddress = actorMtxPtr;
+     }
 }
 
 // ksys::phys::RigidBodyFromShape::create to create a RigidBody from a shape

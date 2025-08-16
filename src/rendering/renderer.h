@@ -68,7 +68,7 @@ public:
         bool HasCopied() const { return m_copiedColor; };
         void StartRendering();
         void Render();
-        XrCompositionLayerQuad FinishRendering(XrTime predictedDisplayTime);
+        std::vector<XrCompositionLayerQuad> FinishRendering(XrTime predictedDisplayTime);
 
     private:
         std::unique_ptr<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>> m_swapchain;

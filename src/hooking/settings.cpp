@@ -31,15 +31,6 @@ data_VRSettingsIn CemuHooks::GetSettings() {
     return g_settings;
 }
 
-// currently unused
-void CemuHooks::hook_CreateNewScreen(PPCInterpreter_t* hCPU) {
-    hCPU->instructionPointer = hCPU->sprNew.LR;
-
-    const char* screenName = (const char*)(s_memoryBaseAddress + hCPU->gpr[7]);
-    ScreenId screenId = (ScreenId)hCPU->gpr[5];
-    Log::print("Switching to new screen \"{}\" with ID {:08X}...", screenName, std::to_underlying(screenId));
-}
-
 
 void CemuHooks::hook_OSReportToConsole(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;

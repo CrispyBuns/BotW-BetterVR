@@ -25,9 +25,9 @@ Log::~Log() {
 void Log::print(const char* message) {
 #ifdef _DEBUG
     std::string messageStr(message);
-    // if (!messageStr.starts_with("! ")) {
-    //     return;
-    // }
+    if (!messageStr.starts_with("!! ")) {
+        return;
+    }
     messageStr += "\n";
     DWORD charsWritten = 0;
     WriteConsoleA(consoleHandle, messageStr.c_str(), (DWORD)messageStr.size(), &charsWritten, NULL);

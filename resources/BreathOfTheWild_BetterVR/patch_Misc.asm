@@ -12,8 +12,8 @@ moduleMatches = 0x6267BFD0
 ;0x024AA7C8 = blr
 
 ; disables all collisions (from camera presumably) ; EDIT: this description seems wrong, it's actually used in some camera stuff?
-0x030E47CC = li r3, 0 ; this prevents a jump to Actor::m56. Might be trying to get the actor's shouldRender flag or smth, and we are patching that?
-0x030E47E4 = li r3, 0 ; this does nothing, since its the same as the instruction it replaces: li r3, 0
+;0x030E47CC = li r3, 0 ; this prevents a jump to Actor::m56. Might be trying to get the actor's shouldRender flag or smth, and we are patching that?
+;0x030E47E4 = li r3, 0 ; this does nothing, since its the same as the instruction it replaces: li r3, 0
 
 ; working VR physics swinging
 ;0x024AA8F4 = nop

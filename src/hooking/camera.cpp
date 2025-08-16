@@ -4,23 +4,6 @@
 #include "../instance.h"
 
 
-data_VRProjectionMatrixOut calculateFOVAndOffset(XrFovf viewFOV) {
-    float totalHorizontalFov = viewFOV.angleRight - viewFOV.angleLeft;
-    float totalVerticalFov = viewFOV.angleUp - viewFOV.angleDown;
-
-    float aspectRatio = totalHorizontalFov / totalVerticalFov;
-    float fovY = totalVerticalFov;
-    float projectionCenter_offsetX = (viewFOV.angleRight + viewFOV.angleLeft) / 2.0f;
-    float projectionCenter_offsetY = (viewFOV.angleUp + viewFOV.angleDown) / 2.0f;
-
-    data_VRProjectionMatrixOut ret = {};
-    ret.aspectRatio = aspectRatio;
-    ret.fovY = fovY;
-    ret.offsetX = projectionCenter_offsetX;
-    ret.offsetY = projectionCenter_offsetY;
-    return ret;
-}
-
 void CemuHooks::hook_BeginCameraSide(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
 
@@ -137,9 +120,24 @@ void CemuHooks::hook_CameraRotationControl(PPCInterpreter_t* hCPU) {
 
     const glm::fquat qYaw = glm::angleAxis(-stick.x * kYawSpeed * dt, glm::vec3(0.f, 1.f, 0.f));
 
-    VRManager::instance().XR->m_inputCameraRotation = glm::normalize(VRManager::instance().XR->m_inputCameraRotation.load() * qYaw);
+    //VRManager::instance().XR->m_inputCameraRotation = glm::normalize(VRManager::instance().XR->m_inputCameraRotation.load() * qYaw);
 }
 
+
+std::pair<glm::quat, glm::quat> swingTwistY(const glm::quat& q) {
+    glm::vec3 yAxis(0, 1, 0);
+    // Project rotation axis onto Y to get twist
+    glm::vec3 r(q.x, q.y, q.z);
+    float dot = glm::dot(r, yAxis);
+    glm::vec3 proj = yAxis * dot;
+    glm::quat twist = glm::normalize(glm::quat(q.w, proj.x, proj.y, proj.z));
+    glm::quat swing = q * glm::conjugate(twist);
+    return { swing, twist };
+};
+
+
+glm::fquat CemuHooks::s_cameraRotation = {};
+glm::fquat CemuHooks::s_forwardRotation = glm::angleAxis(-90.0f, glm::vec3(0.0f, 1.0f, 0.0f));
 
 void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -150,73 +148,88 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
     BESeadLookAtCamera camera = {};
     readMemory(cameraIn, &camera);
 
-    if (camera.pos.x.getLE() != 0.0f && std::fabs(camera.at.z.getLE()) >= std::numeric_limits<float>::epsilon()) {
-         Log::print("[PPC] Getting render camera for {} side", cameraSide == OpenXR::EyeSide::LEFT ? "left" : "right");
+    Log::print("[PPC] Getting render camera for {} side", cameraSide == OpenXR::EyeSide::LEFT ? "left" : "right");
 
-        // in-game camera
-        glm::mat3x4 originalMatrix = camera.mtx.getLEMatrix();
-        glm::mat4 viewGame = glm::transpose(originalMatrix);
-        glm::mat4 worldGame = glm::inverse(viewGame);
-        glm::quat baseRot = glm::quat_cast(worldGame);
+    // in-game camera
+    glm::mat3x4 originalMatrix = camera.mtx.getLEMatrix();
+    glm::mat4 viewGame = glm::transpose(originalMatrix);
+    glm::mat4 worldGame = glm::inverse(viewGame);
+    glm::quat baseRot = glm::quat_cast(worldGame);
+    auto [swing, baseYaw] = swingTwistY(baseRot);
 
-        glm::vec3 basePos = glm::vec3(worldGame[3]);
-        if (GetSettings().IsFirstPersonMode()) {
-            basePos += glm::vec3(0.0f, GetSettings().playerHeightSetting.getLE(), 0.0f);
-        }
+    glm::vec3 basePos = glm::vec3(worldGame[3]);
 
-        // vr camera
-        if (!VRManager::instance().XR->GetRenderer()->GetPose(cameraSide).has_value()) {
-            return;
-        }
-        XrPosef currPose = VRManager::instance().XR->GetRenderer()->GetPose(cameraSide).value();
-        glm::fvec3 eyePos = ToGLM(currPose.position);
-        glm::fquat eyeRot = ToGLM(currPose.orientation);
 
-        auto views = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
-        if (!views) {
-            Log::print("[ERROR] hook_updateCamera: No views available for the middle pose.");
-            return;
-        }
+    // take link's direction, then rotate the headset position
+    BEMatrix34 mtx = {};
+    readMemory(s_playerMtxAddress, &mtx);
+    glm::fvec3 playerPos = mtx.getPos().getLE();
+    glm::fquat playerRot = mtx.getRotLE();
 
-        // todo: we moved to our own custom camera system, but we could see if the CameraOld method might've worked if we swapped the order of the quaternion multiplications. Apparently it's important.
-        glm::vec3 newPos = basePos + (baseRot * (VRManager::instance().XR->m_inputCameraRotation.load() * eyePos));
-        glm::fquat newRot = baseRot * VRManager::instance().XR->m_inputCameraRotation.load() * eyeRot;
+    // vr camera
+    std::optional<XrPosef> currPoseOpt = VRManager::instance().XR->GetRenderer()->GetPose(cameraSide);
+    if (!currPoseOpt.has_value())
+        return;
+    glm::fvec3 eyePos = ToGLM(currPoseOpt.value().position);
+    glm::fquat eyeRot = ToGLM(currPoseOpt.value().orientation);
 
-        glm::mat4 newWorldVR = glm::translate(glm::mat4(1.0f), newPos) * glm::mat4_cast(newRot);
-        glm::mat4 newViewVR = glm::inverse(newWorldVR);
-        glm::mat3x4 rowMajor = glm::transpose(newViewVR);
+    s_cameraRotation = baseYaw;
+    s_forwardRotation = s_cameraRotation * glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        camera.mtx.setLEMatrix(rowMajor);
-        // glm::fvec3 newPos = glm::fvec3(newWorldVR[3]);
-        camera.pos.x = newPos.x;
-        camera.pos.y = newPos.y;
-        camera.pos.z = newPos.z;
+    // todo: we moved to our own custom camera system, but we could see if the CameraOld method might've worked if we swapped the order of the quaternion multiplications. Apparently it's important.
 
-        // Set look-at point by offsetting position in view direction
-        glm::vec3 viewDir = -glm::vec3(rowMajor[2]); // Forward direction is -Z in view space
-        camera.at.x = newPos.x + viewDir.x;
-        camera.at.y = newPos.y + viewDir.y;
-        camera.at.z = newPos.z + viewDir.z;
+    glm::vec3 newPos = playerPos + (baseYaw * eyePos);
+    glm::fquat newRot = baseYaw * eyeRot;
 
-        // Transform world up vector by new rotation
-        glm::vec3 upDir = glm::vec3(rowMajor[1]); // Up direction is +Y in view space
-        camera.up.x = upDir.x;
-        camera.up.y = upDir.y;
-        camera.up.z = upDir.z;
+    glm::mat4 newWorldVR = glm::translate(glm::mat4(1.0f), newPos) * glm::mat4_cast(newRot);
+    glm::mat4 newViewVR = glm::inverse(newWorldVR);
+    glm::mat3x4 rowMajor = glm::transpose(newViewVR);
 
-        writeMemory(cameraOut, &camera);
-        hCPU->gpr[3] = cameraOut;
-    }
-    else {
-        // Log::print("[ERROR!!!] Getting render camera (with LR: {:08X}): {}", hCPU->sprNew.LR, camera);
-    }
+    camera.mtx.setLEMatrix(rowMajor);
+    camera.pos = newPos;
+
+    // Set look-at point by offsetting position in view direction
+    glm::vec3 viewDir = -glm::vec3(rowMajor[2]); // Forward direction is -Z in view space
+    camera.at = newPos + viewDir;
+
+    // Transform world up vector by new rotation
+    glm::vec3 upDir = glm::vec3(rowMajor[1]); // Up direction is +Y in view space
+    camera.up = upDir;
+
+    glm::fvec3 yawDegrees = glm::eulerAngles(baseRot);
+    float yawRotation = yawDegrees.x >= 3.0f ? yawDegrees.y : -yawDegrees.y + glm::radians(180.0f);
+    //Log::print("!! In-game camera position = {}, In-game camera rotation = {} degrees", basePos, yawRotation);
+    //Log::print("!! Link's position: {}, Link's rotation = {} degrees", playerPos, playerRot);
+
+    writeMemory(cameraOut, &camera);
+    hCPU->gpr[3] = cameraOut;
 }
 
 constexpr uint32_t seadOrthoProjection = 0x1027B5BC;
 constexpr uint32_t seadPerspectiveProjection = 0x1027B54C;
 
+
 // https://github.com/KhronosGroup/OpenXR-SDK/blob/858912260ca616f4c23f7fb61c89228c353eb124/src/common/xr_linear.h#L564C1-L632C2
 // https://github.com/aboood40091/sead/blob/45b629fb032d88b828600a1b787729f2d398f19d/engine/library/modules/src/gfx/seadProjection.cpp#L166
+
+data_VRProjectionMatrixOut calculateFOVAndOffset(XrFovf viewFOV) {
+    float totalHorizontalFov = viewFOV.angleRight - viewFOV.angleLeft;
+    float totalVerticalFov = viewFOV.angleUp - viewFOV.angleDown;
+
+    float aspectRatio = totalHorizontalFov / totalVerticalFov;
+    float fovY = totalVerticalFov;
+    float projectionCenter_offsetX = (viewFOV.angleRight + viewFOV.angleLeft) / 2.0f;
+    float projectionCenter_offsetY = (viewFOV.angleUp + viewFOV.angleDown) / 2.0f;
+
+    data_VRProjectionMatrixOut ret = {};
+    ret.aspectRatio = aspectRatio;
+    ret.fovY = fovY;
+    ret.offsetX = projectionCenter_offsetX;
+    ret.offsetY = projectionCenter_offsetY;
+
+    return ret;
+}
+
 static glm::mat4 calculateProjectionMatrix(float nearZ, float farZ, const XrFovf& fov) {
     float l = tanf(fov.angleLeft) * nearZ;
     float r = tanf(fov.angleRight) * nearZ;
@@ -227,17 +240,17 @@ static glm::mat4 calculateProjectionMatrix(float nearZ, float farZ, const XrFovf
     float invH = 1.0f / (t - b);
     float invD = 1.0f / (farZ - nearZ);
 
-    glm::mat4 col;
-    col[0][0] = 2 * nearZ * invW;
-    col[1][1] = 2 * nearZ * invH;
-    col[0][2] = (r + l) * invW;
-    col[1][2] = (t + b) * invH;
-    col[2][2] = -(farZ + nearZ) * invD;
-    col[2][3] = -(2 * farZ * nearZ) * invD;
-    col[3][2] = -1.0f;
-    col[3][3] = 0.0f;
+    glm::mat4 dst = {};
+    dst[0][0] = 2.0f * nearZ * invW;
+    dst[1][1] = 2.0f * nearZ * invH;
+    dst[0][2] = (r + l) * invW;
+    dst[1][2] = (t + b) * invH;
+    dst[2][2] = -(farZ + nearZ) * invD;
+    dst[2][3] = -(2.0f * farZ * nearZ) * invD;
+    dst[3][2] = -1.0f;
+    dst[3][3] = 0.0f;
 
-    return glm::transpose(col);
+    return dst;
 }
 
 void CemuHooks::hook_GetRenderProjection(PPCInterpreter_t* hCPU) {
@@ -247,55 +260,52 @@ void CemuHooks::hook_GetRenderProjection(PPCInterpreter_t* hCPU) {
     uint32_t projectionOut = hCPU->gpr[12];
     OpenXR::EyeSide side = hCPU->gpr[0] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
 
-    BESeadProjection projection = {};
-    readMemory(projectionIn, &projection);
+    BESeadPerspectiveProjection perspectiveProjection = {};
+    readMemory(projectionIn, &perspectiveProjection);
 
-    if (projection.__vftable == seadPerspectiveProjection) {
-        BESeadPerspectiveProjection perspectiveProjection = {};
-        readMemory(projectionIn, &perspectiveProjection);
-
-        if (perspectiveProjection.zFar == 10000.0f) {
-            return;
-        }
-
-        // Log::print("Render Proj. (LR: {:08X}): {}", hCPU->sprNew.LR, perspectiveProjection);
-        // Log::print("[PPC] Getting render projection for {} side", side == OpenXR::EyeSide::LEFT ? "left" : "right");
-
-        if (!VRManager::instance().XR->GetRenderer()->GetFOV(side).has_value()) {
-            return;
-        }
-        XrFovf currFOV = VRManager::instance().XR->GetRenderer()->GetFOV(side).value();
-        auto newProjection = calculateFOVAndOffset(currFOV);
-
-        perspectiveProjection.aspect = newProjection.aspectRatio;
-        perspectiveProjection.fovYRadiansOrAngle = newProjection.fovY;
-        float halfAngle = newProjection.fovY.getLE() * 0.5f;
-        perspectiveProjection.fovySin = sinf(halfAngle);
-        perspectiveProjection.fovyCos = cosf(halfAngle);
-        perspectiveProjection.fovyTan = tanf(halfAngle);
-        perspectiveProjection.offset.x = newProjection.offsetX;
-        perspectiveProjection.offset.y = newProjection.offsetY;
-
-        glm::fmat4 newMatrix = calculateProjectionMatrix(perspectiveProjection.zNear.getLE(), perspectiveProjection.zFar.getLE(), currFOV);
-        glm::fmat4 newDeviceMatrix = newMatrix;
-        perspectiveProjection.matrix = newMatrix;
-
-        // calculate device matrix
-        float zScale = perspectiveProjection.deviceZScale.getLE();
-        float zOffset = perspectiveProjection.deviceZOffset.getLE();
-
-        newDeviceMatrix[2][0] *= zScale;
-        newDeviceMatrix[2][1] *= zScale;
-        newDeviceMatrix[2][2] = (newDeviceMatrix[2][2] + newDeviceMatrix[3][2] * zOffset) * zScale;
-        newDeviceMatrix[2][3] = newDeviceMatrix[2][3] * zScale + newDeviceMatrix[3][3] * zOffset;
-
-        perspectiveProjection.deviceMatrix = newDeviceMatrix;
-        perspectiveProjection.dirty = true;
-        perspectiveProjection.deviceDirty = true;
-
-        writeMemory(projectionOut, &perspectiveProjection);
-        hCPU->gpr[3] = projectionOut;
+    if (perspectiveProjection.zFar == 10000.0f) {
+        return;
     }
+
+    // Log::print("Render Proj. (LR: {:08X}): {}", hCPU->sprNew.LR, perspectiveProjection);
+    // Log::print("[PPC] Getting render projection for {} side", side == OpenXR::EyeSide::LEFT ? "left" : "right");
+
+    if (!VRManager::instance().XR->GetRenderer()->GetFOV(side).has_value()) {
+        return;
+    }
+    XrFovf currFOV = VRManager::instance().XR->GetRenderer()->GetFOV(side).value();
+    auto newProjection = calculateFOVAndOffset(currFOV);
+
+    perspectiveProjection.aspect = newProjection.aspectRatio;
+    perspectiveProjection.fovYRadiansOrAngle = newProjection.fovY;
+    float halfAngle = newProjection.fovY.getLE() * 0.5f;
+    perspectiveProjection.fovySin = sinf(halfAngle);
+    perspectiveProjection.fovyCos = cosf(halfAngle);
+    perspectiveProjection.fovyTan = tanf(halfAngle);
+    perspectiveProjection.offset.x = newProjection.offsetX;
+    perspectiveProjection.offset.y = newProjection.offsetY;
+
+    glm::fmat4 newMatrix = calculateProjectionMatrix(perspectiveProjection.zNear.getLE(), perspectiveProjection.zFar.getLE(), currFOV);
+    perspectiveProjection.matrix = newMatrix;
+
+    // calculate device matrix
+    glm::fmat4 newDeviceMatrix = newMatrix;
+
+    float zScale = perspectiveProjection.deviceZScale.getLE();
+    float zOffset = perspectiveProjection.deviceZOffset.getLE();
+
+    newDeviceMatrix[2][0] *= zScale;
+    newDeviceMatrix[2][1] *= zScale;
+    newDeviceMatrix[2][2] = (newDeviceMatrix[2][2] + newDeviceMatrix[3][2] * zOffset) * zScale;
+    newDeviceMatrix[2][3] = newDeviceMatrix[2][3] * zScale + newDeviceMatrix[3][3] * zOffset;
+
+    perspectiveProjection.deviceMatrix = newDeviceMatrix;
+
+    perspectiveProjection.dirty = false;
+    perspectiveProjection.deviceDirty = false;
+
+    writeMemory(projectionOut, &perspectiveProjection);
+    hCPU->gpr[3] = projectionOut;
 }
 
 //float previousAddedAngle = 0.0f;
@@ -324,8 +334,14 @@ void CemuHooks::hook_EndCameraSide(PPCInterpreter_t* hCPU) {
 
     if (VRManager::instance().XR->GetRenderer()->IsInitialized() && side == OpenXR::EyeSide::RIGHT) {
         VRManager::instance().XR->GetRenderer()->EndFrame();
-        CemuHooks::m_heldWeapons[0] = 0;
-        CemuHooks::m_heldWeapons[1] = 0;
+        CemuHooks::m_heldWeaponsLastUpdate[0] = CemuHooks::m_heldWeaponsLastUpdate[0]++;
+        CemuHooks::m_heldWeaponsLastUpdate[1] = CemuHooks::m_heldWeaponsLastUpdate[1]++;
+        if (CemuHooks::m_heldWeaponsLastUpdate[0] >= 6) {
+            CemuHooks::m_heldWeapons[0] = 0;
+        }
+        if (CemuHooks::m_heldWeaponsLastUpdate[1] >= 6) {
+            CemuHooks::m_heldWeapons[1] = 0;
+        }
     }
 
     Log::print("{0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0}", side == OpenXR::EyeSide::LEFT ? "LEFT" : "RIGHT");
@@ -352,36 +368,77 @@ void CemuHooks::hook_SetActorOpacity(PPCInterpreter_t* hCPU) {
     double toBeSetOpacity = hCPU->fpr[1].fp0;
     uint32_t actorPtr = hCPU->gpr[3];
 
+    float actual_transparency = 1.0f;
+
     ActorWiiU actor;
     readMemory(actorPtr, &actor);
 
     if (GetSettings().IsFirstPersonMode()) {
-        uint32_t actorVTable = actor.vtable.getLE();
-        if (actorVTable == playerVTable) {
-            //Log::print("[PPC] Setting player opacity to {} for actor at {:08X}", toBeSetOpacity, actorPtr);
-            toBeSetOpacity = 0.0;
-            uint8_t opacityOrDoFlushOpacityToGPU = 1;
-            //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
-            return;
-        }
+        //uint32_t actorVTable = actor.vtable.getLE();
+        //if (actorVTable == playerVTable) {
+        //    //Log::print("[PPC] Setting player opacity to {} for actor at {:08X}", toBeSetOpacity, actorPtr);
+        //    toBeSetOpacity = 1.0;
+        //    uint8_t opacityOrDoFlushOpacityToGPU = 1;
+        //    //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+        //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+        //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+        //    return;
+        //}
 
         // prevent the game from hiding weapons that clip into the player model or are hidden for some other reason
         if (m_heldWeapons[0] == actorPtr || m_heldWeapons[1] == actorPtr) {
-            //Log::print("!! PREVENTING setting the weapon opacity for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actorPtr, hCPU->sprNew.LR);
-            toBeSetOpacity = 1.0;
-            uint8_t opacityOrDoFlushOpacityToGPU = 0;
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            if (hCPU->sprNew.LR == 0x024A410C) {
+                //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
+                //toBeSetOpacity = 1.0;
+                //uint8_t opacityOrDoFlushOpacityToGPU = 0;
+                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+                //toBeSetOpacity = 1.0;
+                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
+                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+                return;
+            }
+
+            if (hCPU->sprNew.LR == 0x024A4118) {
+                //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
+                toBeSetOpacity = 1.0f;
+                uint8_t opacityOrDoFlushOpacityToGPU = 0;
+                writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+                toBeSetOpacity = 1.0;
+                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
+                writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+
+                //hCPU->fpr[30].fp0 = 0.0f;
+                //hCPU->fpr[1].fp0 = 1.0f;
+                hCPU->instructionPointer = 0x024A4128;
+            }
+
+            //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
+            toBeSetOpacity = 1.0f;
+            uint8_t opacityOrDoFlushOpacityToGPU = 1;
+            if (hCPU->sprNew.LR == 0x024A6B18) {
+                float negativeOpacity = 0.0;
+                hCPU->fpr[31].fp0 = 1.0f;
+                hCPU->fpr[1].fp0 = 1.0f;
+                opacityOrDoFlushOpacityToGPU = 0;
+                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
+            }
             writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
             writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+
+            //if (hCPU->sprNew.LR == 0x024A4118) {
+            //    hCPU->fpr[30].fp0 = 0.0f;
+            //    hCPU->fpr[1].fp0 = 1.0f;
+            //    hCPU->instructionPointer = 0x024A4128;
+            //}
             return;
         }
     }
 
+    //Log::print("!! Currently held weapon ptrs: {:08X} {:08X}", CemuHooks::m_heldWeapons[0], CemuHooks::m_heldWeapons[1]);
     if (actor.modelOpacity.getLE() != toBeSetOpacity) {
-        //Log::print("!! Currently held weapon ptrs: {:08X} {:08X}", CemuHooks::m_heldWeapons[0], CemuHooks::m_heldWeapons[1]);
-        //Log::print("!! Setting opacity of '{}' (vtable = {:08X}, ptr = {:08X}) to opacity {} (LR = {:08X})", actor.name.getLE(), actor.vtable.getLE(), actorPtr, toBeSetOpacity, hCPU->sprNew.LR);
         uint8_t opacityOrDoFlushOpacityToGPU = 1;
         writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
         writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);

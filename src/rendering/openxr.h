@@ -42,6 +42,26 @@ public:
             XrActionStateBoolean interact;
             std::array<XrActionStateBoolean, 2> grab;
 
+            struct GrabButtonState {
+                enum class Event {
+                    None,
+                    ShortPress,
+                    LongPress,
+                    DoublePress
+                };
+
+                bool wasDownLastFrame = false;
+                bool longFired = false;
+                bool waitingForSecond = false;
+                std::chrono::steady_clock::time_point pressStartTime;
+                std::chrono::steady_clock::time_point lastReleaseTime;
+
+                Event lastEvent = Event::None;
+
+                void resetFrameFlags() { lastEvent = Event::None; }
+            };
+            std::array<GrabButtonState, 2> grabState; // LEFT/RIGHT
+
             std::array<XrActionStatePose, 2> pose;
             std::array<XrSpaceLocation, 2> poseLocation;
             std::array<XrSpaceVelocity, 2> poseVelocity;
@@ -137,3 +157,6 @@ private:
     PFN_xrCreateDebugUtilsMessengerEXT func_xrCreateDebugUtilsMessengerEXT = nullptr;
     PFN_xrDestroyDebugUtilsMessengerEXT func_xrDestroyDebugUtilsMessengerEXT = nullptr;
 };
+
+
+using GrabButtonState = OpenXR::InputState::InGame::GrabButtonState; 

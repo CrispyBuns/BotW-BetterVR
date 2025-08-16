@@ -13,7 +13,7 @@ namespace sead {
     static_assert(sizeof(BufferedSafeString) == 0x0C, "BufferedSafeString size mismatch");
 
     struct FixedSafeString40 : BufferedSafeString {
-        char data[64];
+        char data[0x40];
 
         std::string getLE() const {
             if (c_str.getLE() == 0) {
@@ -23,6 +23,18 @@ namespace sead {
         }
     };
     static_assert(sizeof(FixedSafeString40) == 0x4C, "FixedSafeString40 size mismatch");
+
+	struct FixedSafeString100 : BufferedSafeString {
+        char data[0x100];
+
+        std::string getLE() const {
+            if (c_str.getLE() == 0) {
+                return std::string();
+            }
+            return std::string(data, strnlen(data, sizeof(data)));
+        }
+    };
+    static_assert(sizeof(FixedSafeString100) == 0x10C, "FixedSafeString100 size mismatch");
 
     struct PtrArrayImpl {
         BEType<uint32_t> size;
@@ -177,7 +189,8 @@ struct ActorWiiU : BaseProc {
     PADDED_BYTES(0x334, 0x334);
     BEType<float> startModelOpacity;
     BEType<float> modelOpacity;
-    PADDED_BYTES(0x340, 0x348);
+    BEType<float> modelOpacityRelated;
+    PADDED_BYTES(0x344, 0x348);
     struct {
         BEType<float> minX;
         BEType<float> minY;
