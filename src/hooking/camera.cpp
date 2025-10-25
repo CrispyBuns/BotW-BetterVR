@@ -1,7 +1,6 @@
-#include "pch.h"
+#include "instance.h"
 #include "cemu_hooks.h"
 #include "rendering/openxr.h"
-#include "instance.h"
 
 
 void CemuHooks::hook_BeginCameraSide(PPCInterpreter_t* hCPU) {
@@ -31,65 +30,98 @@ void CemuHooks::hook_BeginCameraSide(PPCInterpreter_t* hCPU) {
 // 0x02B8F508 = li r3, 0
 // 0x2B9B930 = li r3, 0
 
+static std::pair<glm::quat, glm::quat> swingTwistY(const glm::quat& q) {
+    glm::vec3 yAxis(0, 1, 0);
+    // Project rotation axis onto Y to get twist
+    glm::vec3 r(q.x, q.y, q.z);
+    float dot = glm::dot(r, yAxis);
+    glm::vec3 proj = yAxis * dot;
+    glm::quat twist = glm::normalize(glm::quat(q.w, proj.x, proj.y, proj.z));
+    glm::quat swing = q * glm::conjugate(twist);
+    return { swing, twist };
+}
 
-//static glm::fquat extractYaw(const glm::fquat& q) {
-//    // filter out everything but the yaw, with a world normal of 0 1 0
-//    glm::fquat n = glm::normalize(q);
-//    float yaw = glm::yaw(n);
-//    // 3. Re-create a quaternion that rotates *only* around the global +Y axis. AngleAxis expects (angle, axis). GLM angles are in radians.
-//    return glm::angleAxis(yaw, glm::vec3(0.0f, 1.0f, 0.0f));
-//}
+glm::fvec3 s_wsCameraPosition = glm::fvec3();
+glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
 
-void CemuHooks::hook_updateCameraOLD(PPCInterpreter_t* hCPU) {
+void CemuHooks::hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
 
     // Read the camera matrix from the game's memory
-    //uint32_t ppc_cameraMatrixOffsetIn = hCPU->gpr[31];
-    //uint32_t ppc_cameraSide = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
-    //ActCamera origCameraMatrix = {};
-    //readMemory(ppc_cameraMatrixOffsetIn, &origCameraMatrix);
+    uint32_t ppc_cameraMatrixOffsetIn = hCPU->gpr[31];
+    OpenXR::EyeSide ppc_cameraSide = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+    ActCamera actCam = {};
+    readMemory(ppc_cameraMatrixOffsetIn, &actCam);
 
-    ////Log::print("[{}] Updated camera position", ppc_cameraSide == OpenXR::EyeSide::LEFT ? "left" : "right");
+    // Existing in-game camera matrix
+    glm::fvec3 oldCameraPosition = actCam.finalCamMtx.pos.getLE();
+    glm::fvec3 oldCameraTarget = actCam.finalCamMtx.target.getLE();
+    glm::fvec3 oldCameraForward = glm::normalize(oldCameraTarget - oldCameraPosition);
+    glm::fvec3 oldCameraUp = actCam.finalCamMtx.up.getLE();
+    glm::fvec3 oldCameraUnknown = actCam.finalCamMtx.unknown.getLE();    
+    float extraValue0 = actCam.finalCamMtx.zNear.getLE();
+    float extraValue1 = actCam.finalCamMtx.zFar.getLE();
 
-    //// Current VR headset camera matrix
-    //auto views = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
-    //if (!views) {
-    //    Log::print("[ERROR] hook_updateCamera: No views available for the middle pose.");
-    //    return;
-    //}
+    //Log::print("!! Existing Camera Address:  {:08X}", ppc_cameraMatrixOffsetIn + (uint32_t)offsetof(ActCamera, finalCamMtx.up));
+    //Log::print("!! Existing Camera Position: {}", oldCameraPosition);
+    //Log::print("!! Existing Camera Target:   {}", oldCameraTarget);
+    //Log::print("!! Existing Camera Up:       {}", oldCameraUp);
+    //Log::print("!! Existing Camera Unknown:  {}", oldCameraUnknown);
+    //Log::print("!! Existing Camera ZNear:    {}, ZFar: {}", extraValue0, extraValue1);
 
-    //glm::fquat playerYaw = extractYaw(views.value());
+    oldCameraPosition.y = oldCameraTarget.y;
 
 
-    //// Current in-game camera matrix
-    //glm::fvec3 oldCameraPosition = glm::fvec3(origCameraMatrix.finalCamMtx.x_x.getLE(), origCameraMatrix.finalCamMtx.y_x.getLE(), origCameraMatrix.finalCamMtx.z_x.getLE());
-    //glm::fvec3 oldCameraTarget = glm::fvec3(origCameraMatrix.finalCamMtx.pos_x.getLE(), origCameraMatrix.finalCamMtx.y_x.getLE(), origCameraMatrix.finalCamMtx.y_y.getLE());
-    //float oldCameraDistance = glm::distance(oldCameraPosition, oldCameraTarget);
+    glm::mat4 existingGameMtx = glm::lookAtRH(oldCameraPosition, oldCameraTarget, oldCameraUp);
 
-    //// Calculate game view directions
-    //glm::fvec3 forwardVector = glm::normalize(oldCameraTarget - oldCameraPosition);
-    //glm::fquat lookAtQuat = glm::quatLookAtRH(forwardVector, { 0.0, 1.0, 0.0 });
+    s_wsCameraPosition = oldCameraPosition;
+    s_wsCameraRotation = glm::quat_cast(glm::inverse(existingGameMtx));
 
-    //// Calculate new view direction
-    //glm::fquat combinedQuat = glm::normalize(lookAtQuat * playerYaw);
-    //glm::fmat3 combinedMatrix = glm::mat3_cast(combinedQuat);
 
-    //origCameraMatrix.finalCamMtx.x_x = oldCameraPosition.x;
-    //origCameraMatrix.finalCamMtx.y_x = oldCameraPosition.y;
-    //origCameraMatrix.finalCamMtx.z_x = oldCameraPosition.z;
-    //// pos + rotated headset pos + inverted forward direction after combining both the in-game and HMD rotation
-    //origCameraMatrix.finalCamMtx.pos_x = oldCameraPosition.x + ((combinedMatrix[2][0] * -1.0f) * oldCameraDistance);
-    //origCameraMatrix.finalCamMtx.x_y = oldCameraPosition.y + ((combinedMatrix[2][1] * -1.0f) * oldCameraDistance);
-    //origCameraMatrix.finalCamMtx.z_y = oldCameraPosition.z + ((combinedMatrix[2][2] * -1.0f) * oldCameraDistance);
+    // Current VR headset camera matrix
+    auto viewsOpt = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
+    if (!viewsOpt) {
+        Log::print("[ERROR] hook_updateCamera: No views available for the middle pose.");
+        return;
+    }
+    auto& views = viewsOpt.value();
 
-    //// Write the camera matrix to the game's memory
-    //uint32_t ppc_cameraMatrixOffsetOut = hCPU->gpr[31];
-    //writeMemory(ppc_cameraMatrixOffsetOut, &origCameraMatrix);
+    // Corrected code
+    glm::mat4 finalPose = glm::inverse(existingGameMtx) * views;
+
+    glm::fvec3 camPos = glm::fvec3(finalPose[3]);
+    glm::fvec3 forward = -glm::normalize(glm::fvec3(finalPose[2]));
+    glm::fvec3 up = glm::normalize(glm::fvec3(finalPose[1]));
+
+    float oldCameraDistance = glm::distance(oldCameraPosition, oldCameraTarget);
+    glm::fvec3 target = camPos + forward * oldCameraDistance;
+
+    actCam.finalCamMtx.pos = camPos;
+    actCam.finalCamMtx.target = target;
+    actCam.finalCamMtx.up = up;
+    //actCam.finalCamMtx.up = glm::fvec3(0.0f, 1.0f, 0.0f);
+
+    // Write the camera matrix to the game's memory
+    uint32_t ppc_cameraMatrixOffsetOut = hCPU->gpr[31];
+    writeMemory(ppc_cameraMatrixOffsetOut, &actCam);
     s_framesSinceLastCameraUpdate = 0;
 }
 
+void CemuHooks::hook_UpdateCameraRotation(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+    // Log::print("[{}] Updated camera rotation", s_currentCameraRotation.second == OpenXR::EyeSide::LEFT ? "left" : "right");
+
+    uint32_t ppc_cameraMatrixOffsetIn = hCPU->gpr[31];
+    LookAtMatrix actCam = {};
+    readMemory(ppc_cameraMatrixOffsetIn, &actCam);
+
+    //writeMemory(ppc_cameraMatrixOffsetIn, &actCam);
+}
+
+glm::mat4 CemuHooks::s_lastCameraMtx = glm::mat4(1.0f);
 
 
+// ========== Camera Rotation Control ==========
 XrTime s_lastTimestamp = -1;
 constexpr float kYawSpeed = glm::radians(60.f);
 constexpr float kDeadzone = 0.3f;
@@ -140,21 +172,8 @@ void CemuHooks::hook_ReplaceCameraMode(PPCInterpreter_t* hCPU) {
         }
     }
 }
+// ============================================
 
-
-static std::pair<glm::quat, glm::quat> swingTwistY(const glm::quat& q) {
-    glm::vec3 yAxis(0, 1, 0);
-    // Project rotation axis onto Y to get twist
-    glm::vec3 r(q.x, q.y, q.z);
-    float dot = glm::dot(r, yAxis);
-    glm::vec3 proj = yAxis * dot;
-    glm::quat twist = glm::normalize(glm::quat(q.w, proj.x, proj.y, proj.z));
-    glm::quat swing = q * glm::conjugate(twist);
-    return { swing, twist };
-}
-
-
-glm::mat4 CemuHooks::s_lastCameraMtx = glm::mat4(1.0f);
 
 void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -167,15 +186,21 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
 
     Log::print("[PPC] Getting render camera for {} side", cameraSide == OpenXR::EyeSide::LEFT ? "left" : "right");
 
-    s_lastCameraMtx = glm::fmat4x3(glm::inverse(glm::mat4(camera.mtx.getLEMatrix()))); // glm::inverse(glm::lookAtRH(camera.pos.getLE(), camera.at.getLE(), camera.up.getLE()));
+    //s_lastCameraMtx = glm::fmat4x3(glm::inverse(glm::mat4(camera.mtx.getLEMatrix()))); // glm::inverse(glm::lookAtRH(camera.pos.getLE(), camera.at.getLE(), camera.up.getLE()));
 
     // in-game camera
     glm::mat4x3 viewMatrix = camera.mtx.getLEMatrix();
     glm::mat4 worldGame = glm::inverse(glm::mat4(viewMatrix));
-    glm::quat baseRot = glm::quat_cast(worldGame);
     glm::vec3 basePos = glm::vec3(worldGame[3]);
+    glm::quat baseRot = glm::quat_cast(worldGame);
+
+    // overwrite with our stored camera pos/rot
+    basePos = s_wsCameraPosition;
+    baseRot = s_wsCameraRotation;
     auto [swing, baseYaw] = swingTwistY(baseRot);
-    //baseYaw = glm::quat(glm::fvec3(0, glm::yaw(baseRot), 0));
+
+    s_lastCameraMtx = glm::fmat4x3(glm::translate(glm::identity<glm::fmat4>(), basePos) * glm::mat4(baseRot));
+
 
 
     // take link's direction, then rotate the headset position
@@ -188,15 +213,16 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
     std::optional<XrPosef> currPoseOpt = VRManager::instance().XR->GetRenderer()->GetPose(cameraSide);
     if (!currPoseOpt.has_value())
         return;
-    glm::fvec3 vrPos = ToGLM(currPoseOpt.value().position);
-    glm::fquat vrRot = ToGLM(currPoseOpt.value().orientation);
+    glm::fvec3 eyePos = ToGLM(currPoseOpt.value().position);
+    glm::fquat eyeRot = ToGLM(currPoseOpt.value().orientation);
 
-    if (CemuHooks::GetSettings().IsFirstPersonMode()) {
-        basePos = playerPos;
+    if (GetSettings().IsFirstPersonMode()) {
+        //basePos = playerPos;
     }
 
-    glm::vec3 newPos = basePos + (baseYaw * vrPos);
-    glm::fquat newRot = baseYaw * vrRot;
+    glm::vec3 newPos = basePos + (baseYaw * eyePos);
+    glm::fquat newRot = baseYaw * eyeRot;
+
 
     glm::mat4 newWorldVR = glm::translate(glm::mat4(1.0f), newPos) * glm::mat4_cast(newRot);
     glm::mat4 newViewVR = glm::inverse(newWorldVR);
@@ -216,12 +242,6 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
 
     //glm::mat4 workingMtx = glm::inverse(glm::lookAtRH(newPos, newPos + glm::vec3(newViewVR[2]), glm::fvec3(0, 1, 0)));
     //s_lastCameraMtx = workingMtx;
-
-
-    //glm::fvec3 yawDegrees = glm::eulerAngles(baseRot);
-    //float yawRotation = yawDegrees.x >= 3.0f ? yawDegrees.y : -yawDegrees.y + glm::radians(180.0f);
-    //Log::print("!! In-game camera position = {}, In-game camera rotation = {} degrees", basePos, yawRotation);
-    //Log::print("!! Link's position: {}, Link's rotation = {} degrees", playerPos, playerRot);
 
     writeMemory(cameraOut, &camera);
     hCPU->gpr[3] = cameraOut;
@@ -381,6 +401,23 @@ void CemuHooks::hook_ModifyLightPrePassProjectionMatrix(PPCInterpreter_t* hCPU) 
     writeMemory(projectionIn, &perspectiveProjection);
 }
 
+void CemuHooks::hook_FixSomeCamerasForGameplayReasons(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    uint32_t seadCameraPtr = hCPU->gpr[3];
+    uint32_t currentEyeSide = hCPU->gpr[4];
+    uint32_t parentCalleeLr = hCPU->gpr[5];
+    uint32_t alreadyModifiedCameraPtr = hCPU->gpr[6];
+
+    BESeadLookAtCamera camera = {};
+    readMemory(seadCameraPtr, &camera);
+
+    //Log::print("!! FixSomeCamerasForGameplayReasons: EyeSide = {}, Parent LR = {:08X}", currentEyeSide, parentCalleeLr);
+
+    if (parentCalleeLr == 0x02C65784) {
+    }
+    //hCPU->gpr[3] = alreadyModifiedCameraPtr;
+}
 
 //float previousAddedAngle = 0.0f;
 void CemuHooks::hook_ApplyCameraRotation(PPCInterpreter_t* hCPU) {
@@ -406,6 +443,7 @@ void CemuHooks::hook_EndCameraSide(PPCInterpreter_t* hCPU) {
 
     OpenXR::EyeSide side = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
 
+    // todo: sometimes this can deadlock apparently?
     if (VRManager::instance().XR->GetRenderer()->IsInitialized() && side == OpenXR::EyeSide::RIGHT) {
         VRManager::instance().XR->GetRenderer()->EndFrame();
         CemuHooks::m_heldWeaponsLastUpdate[0] = CemuHooks::m_heldWeaponsLastUpdate[0]++;
@@ -439,68 +477,94 @@ constexpr uint32_t playerVTable = 0x101E5FFC;
 void CemuHooks::hook_SetActorOpacity(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
 
+    //uint32_t sceneStatus = getMemory<uint32_t>(0x1046F57C).getLE();
+    //Log::print("!! scene status {}", sceneStatus);
+
     double toBeSetOpacity = hCPU->fpr[1].fp0;
     uint32_t actorPtr = hCPU->gpr[3];
-
-    float actual_transparency = 1.0f;
 
     ActorWiiU actor;
     readMemory(actorPtr, &actor);
 
-    if (GetSettings().IsFirstPersonMode()) {
-        //uint32_t actorVTable = actor.vtable.getLE();
-        //if (actorVTable == playerVTable) {
-        //    //Log::print("[PPC] Setting player opacity to {} for actor at {:08X}", toBeSetOpacity, actorPtr);
-        //    toBeSetOpacity = 1.0;
-        //    uint8_t opacityOrDoFlushOpacityToGPU = 1;
-        //    //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
-        //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
-        //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
-        //    return;
-        //}
+    float actual_transparency = 1.0f;
+    //Log::print("!! Currently held weapon ptrs: {:08X} {:08X}", CemuHooks::m_heldWeapons[0], CemuHooks::m_heldWeapons[1]);
+
+    if (GetSettings().IsFirstPersonMode() && false) {
+        float modelOpacity = actor.modelOpacity.getLE();
+        float startModelOpacity = actor.startModelOpacity.getLE();
+        uint32_t modelOpacityRelated = (uint32_t)actor.modelOpacityRelated.getLE();
+        uint8_t opacityOrDoFlushOpacityToGPU = actor.opacityOrDoFlushOpacityToGPU;
+
+        Log::print("!! Set opacity to {} for actor {} (currently opacity={}, startModel={}, related={}, toFlush={})", toBeSetOpacity, actor.name.getLE(), modelOpacity, startModelOpacity, modelOpacityRelated, opacityOrDoFlushOpacityToGPU);
+
+        uint32_t actorVTable = actor.vtable.getLE();
+        if (actorVTable == playerVTable) {
+            //Log::print("[PPC] Setting player opacity to {} for actor at {:08X}", toBeSetOpacity, actorPtr);
+            toBeSetOpacity = 1.0;
+            float negativeOpacity = 0;
+            uint8_t opacityOrDoFlushOpacityToGPU = 0;
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+            return;
+        }
+
+
+        if (m_heldWeapons[0] == actorPtr || m_heldWeapons[1] == actorPtr) {
+            toBeSetOpacity = 1.0;
+            float negativeOpacity = 0;
+            uint8_t opacityOrDoFlushOpacityToGPU = 1;
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
+            writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+            return;
+        }
 
         // prevent the game from hiding weapons that clip into the player model or are hidden for some other reason
         if (m_heldWeapons[0] == actorPtr || m_heldWeapons[1] == actorPtr) {
-            if (hCPU->sprNew.LR == 0x024A410C) {
-                //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
-                //toBeSetOpacity = 1.0;
-                //uint8_t opacityOrDoFlushOpacityToGPU = 0;
-                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
-                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
-                //toBeSetOpacity = 1.0;
-                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
-                //writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
-                return;
-            }
+            //if (hCPU->sprNew.LR == 0x024A410C) {
+            //    //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
+            //    toBeSetOpacity = 1.0;
+            //    uint8_t opacityOrDoFlushOpacityToGPU = 0;
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            //    toBeSetOpacity = 1.0;
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+            //    return;
+            //}
 
-            if (hCPU->sprNew.LR == 0x024A4118) {
-                //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
-                toBeSetOpacity = 1.0f;
-                uint8_t opacityOrDoFlushOpacityToGPU = 0;
-                writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
-                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
-                toBeSetOpacity = 1.0;
-                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
-                writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+            //if (hCPU->sprNew.LR == 0x024A4118) {
+            //    //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
+            //    toBeSetOpacity = 1.0f;
+            //    uint8_t opacityOrDoFlushOpacityToGPU = 0;
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            //    toBeSetOpacity = 1.0;
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
+            //    writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
 
-                //hCPU->fpr[30].fp0 = 0.0f;
-                //hCPU->fpr[1].fp0 = 1.0f;
-                hCPU->instructionPointer = 0x024A4128;
-            }
+            //    //hCPU->fpr[30].fp0 = 0.0f;
+            //    //hCPU->fpr[1].fp0 = 1.0f;
+            //    //hCPU->instructionPointer = 0x024A4128;
+            //}
 
             //Log::print("!! PREVENTING setting the weapon opacity to {} for a held weapon {} for actor at {:08X} (LR = {:08X})", toBeSetOpacity, actor.name.getLE(), actorPtr, hCPU->sprNew.LR);
-            toBeSetOpacity = 1.0f;
-            uint8_t opacityOrDoFlushOpacityToGPU = 1;
-            if (hCPU->sprNew.LR == 0x024A6B18) {
-                float negativeOpacity = 0.0;
-                hCPU->fpr[31].fp0 = 1.0f;
-                hCPU->fpr[1].fp0 = 1.0f;
-                opacityOrDoFlushOpacityToGPU = 0;
-                writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
-            }
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
-            writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+            //toBeSetOpacity = 1.0f;
+            //uint8_t opacityOrDoFlushOpacityToGPU = 0;
+            ////if (hCPU->sprNew.LR == 0x024A6B18) {
+            ////    float negativeOpacity = 0.0;
+            ////    hCPU->fpr[31].fp0 = 1.0f;
+            ////    hCPU->fpr[1].fp0 = 1.0f;
+            ////    opacityOrDoFlushOpacityToGPU = 0;
+            ////    writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
+            ////}
+            //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);
+            //writeMemoryBE(actorPtr + offsetof(ActorWiiU, startModelOpacity), &toBeSetOpacity);
+            //writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacityRelated), &toBeSetOpacity);
+            //writeMemoryBE(actorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
 
             //if (hCPU->sprNew.LR == 0x024A4118) {
             //    hCPU->fpr[30].fp0 = 0.0f;
@@ -511,7 +575,7 @@ void CemuHooks::hook_SetActorOpacity(PPCInterpreter_t* hCPU) {
         }
     }
 
-    //Log::print("!! Currently held weapon ptrs: {:08X} {:08X}", CemuHooks::m_heldWeapons[0], CemuHooks::m_heldWeapons[1]);
+    // normal behavior if it wasn't the player or a held weapon
     if (actor.modelOpacity.getLE() != toBeSetOpacity) {
         uint8_t opacityOrDoFlushOpacityToGPU = 1;
         writeMemoryBE(actorPtr + offsetof(ActorWiiU, modelOpacity), &toBeSetOpacity);

@@ -3,8 +3,13 @@ moduleMatches = 0x6267BFD0
 
 .origin = codecave
 
-; todo: prevent camera from moving 
+; todo: prevent camera from moving
 
+; ==================================================================================
+; For gameplay and culling reasons, we update the camera position earlier then just before rendering (see GetRenderCamera hook)
+; GetRenderCamera() is still required since this function is only ran once per each pair of eyes being rendered.
+; GetRenderCamera() discards the position and eyes that this function sets, since it can't easily apply only the differential.
+; This function also lacks the ability to modify the up vector, so roll is not possible here, but its sufficient for gameplay.
 updateCameraPositionAndTarget:
 ; repeat instructions from either branches
 lfs f0, 0xEC0(r31)
@@ -20,7 +25,7 @@ stw r3, 0x54(r1)
 
 lis r3, currentEyeSide@ha
 lwz r3, currentEyeSide@l(r3)
-bl import.coreinit.hook_updateCameraOLD
+bl import.coreinit.hook_UpdateCameraForGameplay
 
 exit_updateCameraPositionAndTarget:
 ; function epilogue
@@ -35,6 +40,74 @@ blr
 
 0x02C054FC = bla updateCameraPositionAndTarget
 0x02C05590 = bla updateCameraPositionAndTarget
+
+; ==================================================================================
+
+
+updateCameraRotation:
+stfs f10, 0x18(r31)
+
+mflr r0
+stwu r1, -0x14(r1)
+stw r0, 0x18(r1)
+
+bl import.coreinit.hook_UpdateCameraRotation
+
+exit_updateCameraRotation:
+lwz r0, 0x18(r1)
+mtlr r0
+addi r1, r1, 0x14
+blr
+
+;0x02E57FF0 = bla updateCameraRotation
+
+
+
+
+; ==================================================================================
+; There's an exception that we want to patch for gameplay reasons, namely the bow
+; When drawing the bow, the game uses a non-render camera to calculate the shot
+; We need to apply the VR camera rotation to that camera as well
+; ==================================================================================
+
+hook_cam_getLookAtCamera:
+mflr r0
+stwu r1, -0x20(r1)
+stw r0, 0x24(r1)
+stw r3, 0x1C(r1)
+stw r4, 0x18(r1)
+stw r5, 0x14(r1)
+stw r6, 0x10(r1)
+
+; r3 holds the camera pointer
+lis r4, currentEyeSide@ha
+lwz r4, currentEyeSide@l(r4)
+lwz r5, 0x24(r1) ; pass return address
+lis r6, modifiedCopy_seadLookAtCamera@ha
+addi r6, r6, modifiedCopy_seadLookAtCamera@l
+
+bla import.coreinit.hook_FixSomeCamerasForGameplayReasons
+
+lwz r6, 0x10(r1)
+lwz r5, 0x14(r1)
+lwz r4, 0x18(r1)
+;lwz r3, 0x1C(r1) ; r3 should be kept intact by the hook
+lwz r0, 0x24(r1)
+mtlr r0
+addi r1, r1, 0x20
+blr
+
+; hooks a blr instruction
+0x0396B1C8 = ba hook_cam_getLookAtCamera
+
+
+; ==================================================================================
+; ==================================================================================
+; ==================================================================================
+
+
+
+
 
 
 0x02C0378C = act_GetCamera:

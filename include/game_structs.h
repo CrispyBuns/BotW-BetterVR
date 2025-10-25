@@ -222,6 +222,10 @@ struct ActorWiiU : BaseProc {
     BEType<float> lodDrawDistanceMultiplier;
     PADDED_BYTES(0x494, 0x538);
 };
+static_assert(offsetof(ActorWiiU, gsysModelPtr) == 0x330, "ActorWiiU.gsysModelPtr offset mismatch");
+static_assert(offsetof(ActorWiiU, modelOpacity) == 0x33C, "ActorWiiU.modelOpacity offset mismatch");
+static_assert(offsetof(ActorWiiU, modelOpacityRelated) == 0x340, "ActorWiiU.modelOpacityRelated offset mismatch");
+static_assert(offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU) == 0x436, "ActorWiiU.opacityOrDoFlushOpacityToGPU offset mismatch");
 static_assert(sizeof(ActorWiiU) == 0x53C, "ActorWiiU size mismatch");
 
 struct DynamicActor : ActorWiiU {
@@ -401,13 +405,22 @@ static_assert(offsetof(Weapon, setupAttackSensor.mode) == 0x874, "Weapon.setupAt
 static_assert(offsetof(Weapon, finalizedAttackSensor.resetAttack) == 0x950, "Weapon.finalizedAttackSensor.resetAttack offset mismatch");
 static_assert(sizeof(Weapon) == 0xB5C, "Weapon size mismatch");
 
+struct LookAtMatrix {
+    BEVec3 pos;
+    BEVec3 target;
+    BEVec3 up;
+    BEVec3 unknown;
+    BEType<float> zNear;
+    BEType<float> zFar;
+};
+
 struct ActCamera : ActorWiiU {
     BEType<uint32_t> dword53C;
     BEType<float> float540;
     PADDED_BYTES(0x544, 0x54C);
-    BEMatrix34 origCamMtx;
-    PADDED_BYTES(0x580, 0x5BC);
-    BEMatrix34 finalCamMtx;
+    LookAtMatrix origCamMtx;
+    PADDED_BYTES(0x588, 0x5BC);
+    LookAtMatrix finalCamMtx;
 };
 static_assert(offsetof(ActCamera, origCamMtx) == 0x550, "ActCamera.origCamMtx offset mismatch");
 static_assert(offsetof(ActCamera, finalCamMtx) == 0x5C0, "ActCamera.finalCamMtx offset mismatch");

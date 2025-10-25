@@ -54,6 +54,8 @@ using Microsoft::WRL::ComPtr;
 #include <implot.h>
 
 // glm includes
+#define GLM_FORCE_XYZW_ONLY
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_access.hpp>
@@ -88,6 +90,19 @@ inline XrVector3f ToXR(const glm::fvec3& vec) {
 inline XrQuaternionf ToXR(const glm::fquat& quat) {
     return { quat.x, quat.y, quat.z, quat.w };
 }
+
+inline glm::fmat4 ToMat4(const glm::fvec3& pos) {
+    return glm::translate(glm::identity<glm::fmat4>(), pos);
+}
+
+inline glm::fmat4 ToMat4(const glm::fquat& rot) {
+    return glm::mat4(rot);
+}
+
+inline glm::fmat4 ToMat4(const glm::fvec3& pos, const glm::fquat& rot) {
+    return ToMat4(pos) * ToMat4(rot);
+}
+
 
 inline std::string toLower(std::string str) {
     std::ranges::transform(str, str.begin(), [](unsigned char c) { return std::tolower(c); });
@@ -349,34 +364,6 @@ struct BEMatrix34 : BETypeCompatible {
         x_z = rotMat[2][0];
         y_z = rotMat[2][1];
         z_z = rotMat[2][2];
-    }
-
-    glm::mat4 getNewMatrix() {
-        glm::mat4 translationMatrix = glm::translate(glm::identity<glm::mat4>(), glm::fvec3(pos_x.getLE(), pos_y.getLE(), pos_z.getLE()));
-        glm::mat4 rotationMatrix = glm::mat4(
-            x_x.getLE(), y_x.getLE(), z_x.getLE(), 0.0f,
-            x_y.getLE(), y_y.getLE(), z_y.getLE(), 0.0f,
-            x_z.getLE(), y_z.getLE(), z_z.getLE(), 0.0f,
-            0.0f,       0.0f,       0.0f,       1.0f
-        );
-        return translationMatrix * rotationMatrix;
-    }
-
-    void setNewMatrix(const glm::fmat4& mtx) {
-        glm::fmat3 rotationPart = glm::fmat3(mtx);
-        glm::fvec3 translationPart = glm::fvec3(mtx[3]);
-        x_x = rotationPart[0][0];
-        y_x = rotationPart[0][1];
-        z_x = rotationPart[0][2];
-        x_y = rotationPart[1][0];
-        y_y = rotationPart[1][1];
-        z_y = rotationPart[1][2];
-        x_z = rotationPart[2][0];
-        y_z = rotationPart[2][1];
-        z_z = rotationPart[2][2];
-        pos_x = translationPart.x;
-        pos_y = translationPart.y;
-        pos_z = translationPart.z;
     }
 };
 

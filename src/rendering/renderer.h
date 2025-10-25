@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pch.h"
 #include "d3d12.h"
 #include "openxr.h"
 #include "swapchain.h"
@@ -18,16 +19,21 @@ public:
     std::optional<std::array<XrView, 2>> GetPoses() const { return m_currViews; }
     std::optional<XrFovf> GetFOV(OpenXR::EyeSide side) const { return m_currViews.transform([side](auto& views) { return views[side].fov; }); }
     std::optional<XrPosef> GetPose(OpenXR::EyeSide side) const { return m_currViews.transform([side](auto& views) { return views[side].pose; }); }
-    std::optional<glm::fquat> GetMiddlePose() const {
-        return m_currViews.and_then([](const std::array<XrView, 2>& views) {
-            return std::make_optional(glm::lerp(ToGLM(views[OpenXR::EyeSide::LEFT].pose.orientation), ToGLM(views[OpenXR::EyeSide::RIGHT].pose.orientation), 0.5f));
+    std::optional<glm::fmat4> GetPoseAsMatrix(OpenXR::EyeSide side) const {
+        return m_currViews.transform([side](auto& views) {
+            const XrPosef& pose = views[side].pose;
+            return ToMat4(ToGLM(pose.position), ToGLM(pose.orientation));
         });
-    }
-    std::optional<glm::fvec3> GetMiddlePosePos() const {
-        return m_currViews.and_then([](const std::array<XrView, 2>& views) {
-            return std::make_optional(glm::mix(ToGLM(views[OpenXR::EyeSide::LEFT].pose.position), ToGLM(views[OpenXR::EyeSide::RIGHT].pose.position), 0.5f));
-        });
-    }
+    };
+    std::optional<glm::fmat4> GetMiddlePose() const {
+        if (!m_currViews.has_value()) return std::nullopt;
+        const XrPosef& leftPose = m_currViews->at(OpenXR::EyeSide::LEFT).pose;
+        const XrPosef& rightPose = m_currViews->at(OpenXR::EyeSide::RIGHT).pose;
+        glm::fvec3 middlePos = (ToGLM(leftPose.position) + ToGLM(rightPose.position)) * 0.5f;
+        glm::quat middleOri = glm::slerp(ToGLM(leftPose.orientation), ToGLM(rightPose.orientation), 0.5f);
+
+        return ToMat4(middlePos, middleOri);
+    };
 
     class Layer3D {
     public:

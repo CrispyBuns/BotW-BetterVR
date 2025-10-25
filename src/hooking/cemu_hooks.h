@@ -1,6 +1,6 @@
 #pragma once
 #include "entity_debugger.h"
-#include "rumble.h"
+
 
 class CemuHooks {
 public:
@@ -44,10 +44,12 @@ public:
         osLib_registerHLEFunction("coreinit", "hook_SetActorOpacity", &hook_SetActorOpacity);
         osLib_registerHLEFunction("coreinit", "hook_UseCameraDistance", &hook_UseCameraDistance);
 
-        osLib_registerHLEFunction("coreinit", "hook_updateCameraOLD", &hook_updateCameraOLD);
+        osLib_registerHLEFunction("coreinit", "hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
+        osLib_registerHLEFunction("coreinit", "hook_UpdateCameraRotation", &hook_UpdateCameraRotation);
 
         osLib_registerHLEFunction("coreinit", "hook_ModifyBoneMatrix", &hook_ModifyBoneMatrix);
         osLib_registerHLEFunction("coreinit", "hook_ModifyModelBoneMatrix", &hook_ModifyModelBoneMatrix);
+        osLib_registerHLEFunction("coreinit", "hook_FixSomeCamerasForGameplayReasons", &hook_FixSomeCamerasForGameplayReasons);
         osLib_registerHLEFunction("coreinit", "hook_ModifyLightPrePassProjectionMatrix", &hook_ModifyLightPrePassProjectionMatrix);
 
         osLib_registerHLEFunction("coreinit", "hook_XRRumble_VPADControlMotor", &hook_XRRumble_VPADControlMotor);
@@ -95,7 +97,8 @@ private:
 
 
     // todo: remove this in favour of a better tell when the user is inside a menu
-    static void hook_updateCameraOLD(PPCInterpreter_t* hCPU);
+    static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU);
+    static void hook_UpdateCameraRotation(PPCInterpreter_t* hCPU);
     static void hook_BeginCameraSide(PPCInterpreter_t* hCPU);
     static void hook_GetRenderCamera(PPCInterpreter_t* hCPU);
     static void hook_GetRenderProjection(PPCInterpreter_t* hCPU);
@@ -117,6 +120,7 @@ private:
     static void hook_ModifyModelBoneMatrix(PPCInterpreter_t* hCPU);
 
     static void hook_ModifyLightPrePassProjectionMatrix(PPCInterpreter_t* hCPU);
+    static void hook_FixSomeCamerasForGameplayReasons(PPCInterpreter_t* hCPU);
 
     static void hook_XRRumble_VPADControlMotor(PPCInterpreter_t* hCPU);
     static void hook_XRRumble_VPADStopMotor(PPCInterpreter_t* hCPU);

@@ -33,10 +33,10 @@ lwz r7, 0x00(r7)
 cmpwi r7, 0
 ;beq exitHookInput ; uncomment to only enable XR input when also using gamepad input
 
-; overwrite input with XR input
+; override input with XR input
 lwz r7, 0x04(r1)
 bl import.coreinit.hook_InjectXRInput
-; overwrite status with OK if injection was successful
+; override status with OK if injection was successful
 cmpwi r3, 1
 bne exitHookInput
 lwz r7, 0x10(r1)

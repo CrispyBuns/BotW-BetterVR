@@ -98,6 +98,7 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
 
     sead::FixedSafeString40 actorName = getMemory<sead::FixedSafeString40>(actorPtr + offsetof(ActorWiiU, name));
 
+    // todo: remove this?
     BESeadLookAtCamera camera = {};
     readMemory(cameraPtr, &camera);
     glm::fvec3 cameraPos = camera.pos.getLE();
@@ -127,23 +128,23 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
         BEMatrix34 modelBindInfoMtx = {};
         readMemory(modelBindInfoMtxPtr, &modelBindInfoMtx);
 
-        ModifyWeaponMtxToVRPose(side, weaponMtx, lookAtQuat, lookAtPos);
+        //ModifyWeaponMtxToVRPose(side, weaponMtx, lookAtQuat, lookAtPos);
 
         s_cameraPositions[side] = lookAtPos;
         s_cameraRotations[side] = lookAtQuat;
 
 
-        // prevent weapon transparency
-        BEType<float> modelOpacity = 1.0f;
-        BEType<float> negativeOpacity = 0.0f;
-        writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacity), &modelOpacity);
-        writeMemory(targetActorPtr + offsetof(ActorWiiU, startModelOpacity), &modelOpacity);
-        writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
-        uint8_t opacityOrDoFlushOpacityToGPU = 1;
-        writeMemory(targetActorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
+        //// prevent weapon transparency
+        //BEType<float> modelOpacity = 1.0f;
+        //BEType<float> negativeOpacity = 0.0f;
+        //writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacity), &modelOpacity);
+        //writeMemory(targetActorPtr + offsetof(ActorWiiU, startModelOpacity), &modelOpacity);
+        //writeMemory(targetActorPtr + offsetof(ActorWiiU, modelOpacityRelated), &negativeOpacity);
+        //uint8_t opacityOrDoFlushOpacityToGPU = 1;
+        //writeMemory(targetActorPtr + offsetof(ActorWiiU, opacityOrDoFlushOpacityToGPU), &opacityOrDoFlushOpacityToGPU);
 
         //writeMemory(weaponMtxPtr, &weaponMtx);
-        writeMemory(modelBindInfoMtxPtr, &modelBindInfoMtx);
+        //writeMemory(modelBindInfoMtxPtr, &modelBindInfoMtx);
 
         Weapon targetActor = {};
         readMemory(targetActorPtr, &targetActor);

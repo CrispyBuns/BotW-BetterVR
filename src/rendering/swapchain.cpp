@@ -1,5 +1,5 @@
 #include "swapchain.h"
-#include "../utils/d3d12_utils.h"
+#include "utils/d3d12_utils.h"
 #include "instance.h"
 
 template <DXGI_FORMAT T>
