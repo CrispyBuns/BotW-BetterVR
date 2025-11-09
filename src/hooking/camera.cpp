@@ -77,6 +77,15 @@ void CemuHooks::hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
     s_wsCameraPosition = oldCameraPosition;
     s_wsCameraRotation = glm::quat_cast(glm::inverse(existingGameMtx));
 
+    // rebase the rotation to the player position
+    if (GetSettings().IsFirstPersonMode()) {
+        BEMatrix34 mtx = {};
+        readMemory(s_playerMtxAddress, &mtx);
+        glm::fvec3 playerPos = mtx.getPos().getLE();
+
+        glm::mat4 playerMtx4 = glm::inverse(glm::translate(glm::identity<glm::mat4>(), playerPos) * glm::mat4(s_wsCameraRotation));
+        existingGameMtx = playerMtx4;
+    }
 
     // Current VR headset camera matrix
     auto viewsOpt = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
@@ -217,7 +226,7 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
     glm::fquat eyeRot = ToGLM(currPoseOpt.value().orientation);
 
     if (GetSettings().IsFirstPersonMode()) {
-        //basePos = playerPos;
+        basePos = playerPos;
     }
 
     glm::vec3 newPos = basePos + (baseYaw * eyePos);
