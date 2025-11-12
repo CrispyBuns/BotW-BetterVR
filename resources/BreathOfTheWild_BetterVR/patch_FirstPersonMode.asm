@@ -3,7 +3,18 @@ moduleMatches = 0x6267BFD0
 
 .origin = codecave
 
+; the patch below makes these deprecated
+;0x031CB340 = li r3, 1 ; forces EventMgr::isActiveAtFirstPersonMode to always be true, which disables opacity but also disables interactions
+;0x02C056F4 = li r3, 1 ; this should disable the CameraPhysQuery to always show link in first person mode
+;0x02C07844 = li r3, 1 ; this should disable the CameraGfxQuery to always show link in first person mode
+
+; replaces the blr in Actor/Weapon/OptionalWeapon::CalculateModelOpacity
+0x024A6F20 = ba import.coreinit.hook_CalculateModelOpacity
+0x033AFA9C = ba import.coreinit.hook_CalculateModelOpacity
+0x037B13A8 = ba import.coreinit.hook_CalculateModelOpacity
+
 ; hooks Actor::setOpacity() and replace it with a custom C++ function
+; todo: technically this might not be required anymore
 0x037B13AC = ba import.coreinit.hook_SetActorOpacity
 
 ; sets distance from the camera

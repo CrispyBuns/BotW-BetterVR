@@ -186,7 +186,7 @@ struct ActorWiiU : BaseProc {
     BEType<uint32_t> modelBindInfoPtr;
     PADDED_BYTES(0x32C, 0x32C);
     BEType<uint32_t> gsysModelPtr;
-    PADDED_BYTES(0x334, 0x334);
+    BEType<float> opacityOneRelated;
     BEType<float> startModelOpacity;
     BEType<float> modelOpacity;
     BEType<float> modelOpacityRelated;

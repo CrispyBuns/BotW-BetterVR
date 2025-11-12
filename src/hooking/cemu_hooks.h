@@ -42,6 +42,7 @@ public:
         osLib_registerHLEFunction("coreinit", "hook_DropWeaponLogging", &hook_DropWeaponLogging);
 
         osLib_registerHLEFunction("coreinit", "hook_SetActorOpacity", &hook_SetActorOpacity);
+        osLib_registerHLEFunction("coreinit", "hook_CalculateModelOpacity", &hook_CalculateModelOpacity);
         osLib_registerHLEFunction("coreinit", "hook_UseCameraDistance", &hook_UseCameraDistance);
 
         osLib_registerHLEFunction("coreinit", "hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
@@ -107,6 +108,7 @@ private:
     static void hook_ApplyCameraRotation(PPCInterpreter_t* hCPU);
     static void hook_EndCameraSide(PPCInterpreter_t* hCPU);
     static void hook_SetActorOpacity(PPCInterpreter_t* hCPU);
+    static void hook_CalculateModelOpacity(PPCInterpreter_t* hCPU);
     static void hook_UseCameraDistance(PPCInterpreter_t* hCPU);
 
     static void hook_DropEquipment(PPCInterpreter_t* hCPU);

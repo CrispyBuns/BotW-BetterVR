@@ -13,7 +13,9 @@
 #include <Windows.h>
 #include <winrt/base.h>
 
+
 // These macros mess with some of Vulkan's functions
+#undef ERROR
 #undef CreateEvent
 #undef CreateSemaphore
 
