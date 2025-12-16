@@ -212,6 +212,25 @@ loc_31FA95C:
 ; ========================================================================
 ; ========================================================================
 
+stallTemporarilyDuringLoadingScreens:
+0x10463EB0 = FadeProgress__sInstance:
+
+lis r3, FadeProgress__sInstance@ha
+lwz r3, FadeProgress__sInstance@l(r3)
+cmpwi r3, 0
+beq continueWithRendering
+
+lbz r3, 0x10(r3)
+cmpwi r3, 0
+beq continueWithRendering
+
+; stall for a bit to let loading screen finish
+mr r11, r4
+li r3, 0
+li r4, 1337
+bla import.coreinit.OSSleepTicks
+mr r4, r11
+
 continueWithRendering:
 ; regular continue code below
 lis r3, sead_GameFramework_unlockFrameDrawContext@ha
