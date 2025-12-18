@@ -115,16 +115,8 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.useRune, VPAD_BUTTON_L);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.throwWeapon, VPAD_BUTTON_R);
 
-        /*newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.interact, VPAD_BUTTON_A);*/
-
         if (inputs.inGame.grabState[0].lastEvent == GrabButtonState::Event::ShortPress || inputs.inGame.grabState[1].lastEvent == GrabButtonState::Event::ShortPress)
             newXRBtnHold |= VPAD_BUTTON_A;
-
-        //if (inputs.inGame.grabState[0].lastEvent == GrabButtonState::Event::ShortPress)
-        //    newXRBtnHold |= VPAD_BUTTON_L;
-
-        //if (inputs.inGame.grabState[1].wasDownLastFrame)
-        //    newXRBtnHold |= VPAD_BUTTON_R;
 
         if (inputs.inGame.grabState[0].wasDownLastFrame)
         {
@@ -146,9 +138,6 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
         
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.leftTrigger, VPAD_BUTTON_ZL);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.rightTrigger, VPAD_BUTTON_ZR);
-
-        //newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[0], VPAD_BUTTON_A);
-        //newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.grab[1], VPAD_BUTTON_A);
     }
     else {
         newXRBtnHold |= mapXRButtonToVpad(inputs.inMenu.map, VPAD_BUTTON_MINUS);
@@ -191,8 +180,6 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     constexpr float HOLD_THRESHOLD = 0.1f;
 
     // movement/navigation stick
-    leftStickSource = inputs.inGame.in_game ? inputs.inGame.move : inputs.inMenu.navigate;
-
     auto input = VRManager::instance().XR->m_input.load();
 
     if (input.inGame.in_game) {
