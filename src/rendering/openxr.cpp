@@ -416,8 +416,9 @@ void CheckButtonState(XrActionStateBoolean& action, ButtonState& buttonState) {
 
     // pressed state
     if (down) {
-        if (!buttonState.longFired && (now - buttonState.pressStartTime) >= longPressThreshold) {
-            buttonState.longFired = true;
+        //will need to check if that cause issues elsewhere. Allows to keep LongPress event while button is pressed.
+        if (/*!buttonState.longFired &&*/(now - buttonState.pressStartTime) >= longPressThreshold) {
+            //buttonState.longFired = true;
             buttonState.lastEvent = ButtonState::Event::LongPress;
         }
     }
@@ -453,12 +454,12 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
     syncInfo.activeActionSets = &activeActionSet;
     checkXRResult(xrSyncActions(m_session, &syncInfo), "Failed to sync actions!");
 
-    InputState newState = {};
+    InputState newState = m_input.load();
     newState.inGame.in_game = !inMenu;
     newState.inGame.inputTime = predictedFrameTime;
-    newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
-    newState.inGame.grabState = m_input.load().inGame.grabState;
-    newState.inGame.mapAndInventoryState = m_input.load().inGame.mapAndInventoryState;
+    //newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
+    //newState.inGame.grabState = m_input.load().inGame.grabState;
+    //newState.inGame.mapAndInventoryState = m_input.load().inGame.mapAndInventoryState;
 
     if (inMenu) {
         XrActionStateGetInfo getScrollInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
@@ -587,9 +588,9 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
         newState.inGame.mapAndInventory = { XR_TYPE_ACTION_STATE_BOOLEAN };
         checkXRResult(xrGetActionStateBoolean(m_session, &getMapAndInventoryInfo, &newState.inGame.mapAndInventory), "Failed to get mapAndInventory action value!");
 
-        auto& action = newState.inGame.mapAndInventory;
-        auto& buttonState = newState.inGame.mapAndInventoryState;
-        CheckButtonState(action, buttonState);
+        auto& mapAndInventoryAction = newState.inGame.mapAndInventory;
+        auto& mapAndInventoryButtonState = newState.inGame.mapAndInventoryState;
+        CheckButtonState(mapAndInventoryAction, mapAndInventoryButtonState);
         
         //XrActionStateGetInfo getInventory = { XR_TYPE_ACTION_STATE_GET_INFO };
         //getInventory.action = m_inGame_inventoryAction;
@@ -636,6 +637,10 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
         getRunInfo.subactionPath = XR_NULL_PATH;
         newState.inGame.run = { XR_TYPE_ACTION_STATE_BOOLEAN };
         checkXRResult(xrGetActionStateBoolean(m_session, &getRunInfo, &newState.inGame.run), "Failed to get run action value!");
+
+        auto& runAction = newState.inGame.run;
+        auto& runButtonState = newState.inGame.runState;
+        CheckButtonState(runAction, runButtonState);
         
         XrActionStateGetInfo getAttackInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
         getAttackInfo.action = m_attackAction;

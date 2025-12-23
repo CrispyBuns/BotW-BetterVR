@@ -166,9 +166,9 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
 
         // check if weapon is held and if the grip button is held, drop it
         auto input = VRManager::instance().XR->m_input.load();
-        auto& grabState = input.inGame.grabState[side];
+        auto dropSide = input.inGame.drop_weapon[side];
 
-        if (input.inGame.in_game && grabState.lastEvent == ButtonState::Event::DoublePress && isDroppable(targetActor.name.getLE())) {
+        if (input.inGame.in_game && dropSide && isDroppable(targetActor.name.getLE())) {
             Log::print<INFO>("Dropping weapon {} with type of {} due to double press on grab button", targetActor.name.getLE().c_str(), (uint32_t)targetActor.type.getLE());
             hCPU->gpr[11] = 1;
             hCPU->gpr[9] = 1;
@@ -176,16 +176,16 @@ void CemuHooks::hook_ChangeWeaponMtx(PPCInterpreter_t* hCPU) {
             return;
         }
         // Support for long press (placeholder)
-        if (input.inGame.in_game && grabState.lastEvent == ButtonState::Event::LongPress) {
-            Log::print<CONTROLS>("Long press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
-            // TODO: Implement long press action (e.g., temporarily bind item)
-            //grabState.longPress = false;
-        }
-        // Support for short press (placeholder)
-        if (input.inGame.in_game && grabState.lastEvent == ButtonState::Event::ShortPress) {
-            Log::print<CONTROLS>("Short press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
-            // TODO: Implement short press action (e.g., cycle weapon)
-        }
+        //if (input.inGame.in_game && grabState.lastEvent == ButtonState::Event::LongPress) {
+        //    Log::print<CONTROLS>("Long press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
+        //    // TODO: Implement long press action (e.g., temporarily bind item)
+        //    //grabState.longPress = false;
+        //}
+        //// Support for short press (placeholder)
+        //if (input.inGame.in_game && grabState.lastEvent == ButtonState::Event::ShortPress) {
+        //    Log::print<CONTROLS>("Short press detected for {} (side {})", targetActor.name.getLE().c_str(), (int)side);
+        //    // TODO: Implement short press action (e.g., cycle weapon)
+        //}
 
         hCPU->gpr[9] = 1;
     }
