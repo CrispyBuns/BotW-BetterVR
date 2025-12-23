@@ -76,6 +76,26 @@ struct VPADStatus {
 };
 static_assert(sizeof(VPADStatus) == 0xAC);
 
+enum JoyDir {
+    Up,
+    Right,
+    Down,
+    Left,
+    None
+};
+
+constexpr float AXIS_THRESHOLD = 0.5f;
+constexpr float HOLD_THRESHOLD = 0.1f;
+
+JoyDir GetJoystickDirection(const XrVector2f& stick)
+{
+    if (stick.y >= AXIS_THRESHOLD)       return JoyDir::Up;
+    if (stick.y <= -AXIS_THRESHOLD)      return JoyDir::Down;
+    if (stick.x <= -AXIS_THRESHOLD)      return JoyDir::Left;
+    if (stick.x >= AXIS_THRESHOLD)       return JoyDir::Right;
+
+    return JoyDir::None;
+}
 
 void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -95,7 +115,7 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     }
 
     OpenXR::InputState inputs = VRManager::instance().XR->m_input.load();
-
+    inputs.inGame.drop_weapon[0] = inputs.inGame.drop_weapon[1] = false;
     // fetch game state
     auto gameState = VRManager::instance().XR->m_gameState.load();
     gameState.in_game = inputs.inGame.in_game;
@@ -139,13 +159,24 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
 
     // fetching stick inputs
     XrActionStateVector2f& leftStickSource = gameState.in_game ? inputs.inGame.move : inputs.inMenu.navigate;
+    XrActionStateVector2f& rightStickSource = gameState.in_game ? inputs.inGame.camera : inputs.inMenu.scroll;
+
+    JoyDir leftJoystickDir = GetJoystickDirection(leftStickSource.currentState);
+    JoyDir rightJoystickDir = GetJoystickDirection(rightStickSource.currentState);
+
+    const auto now = std::chrono::steady_clock::now();
+    //Delay to wait before allowing specific inputs again
+    constexpr std::chrono::milliseconds delay{ 200 };
 
     // check if we need to prevent inputs from happening (fix menu reopening when exiting it and grab object when quitting dpad menu)
-    if (gameState.in_game != gameState.was_in_game) gameState.prevent_specific_inputs = true;
+    if (gameState.in_game != gameState.was_in_game) {
+        gameState.prevent_menu_inputs = true;
+        gameState.prevent_menu_time = now;
+    }
 
     if (gameState.in_game) 
     {
-        if (!gameState.prevent_specific_inputs) {
+        if (!gameState.prevent_menu_inputs) {
             if (inputs.inGame.mapAndInventoryState.lastEvent == ButtonState::Event::LongPress) {
                 newXRBtnHold |= VPAD_BUTTON_MINUS;
                 gameState.map_open = true;
@@ -155,61 +186,98 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
                 gameState.map_open = false;
             }
         }
-        else if (inputs.inGame.mapAndInventoryState.lastEvent == ButtonState::Event::None)
-        {
-            //inputs to cancel
-            inputs.inGame.mapAndInventoryState.resetButtonState();
-            inputs.inGame.grabState[0].resetButtonState();
-
-            gameState.prevent_specific_inputs = false;
-        }
+        else if (now >= gameState.prevent_menu_time + delay)
+            gameState.prevent_menu_inputs = false;
 
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.jump, VPAD_BUTTON_X);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.crouch, VPAD_BUTTON_STICK_L);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.run, VPAD_BUTTON_B);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.attack, VPAD_BUTTON_Y);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.cancel, VPAD_BUTTON_B);
-
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.useRune, VPAD_BUTTON_L);
 
-        if (leftHandCloseEnoughFromHead && leftHandBehindHead)
-            VRManager::instance().XR->GetRumbleManager()->startSimpleRumble(true, 0.01f, 0.05f, 0.1f);
-        if (rightHandCloseEnoughFromHead && rightHandBehindHead)
-            VRManager::instance().XR->GetRumbleManager()->startSimpleRumble(false, 0.01f, 0.05f, 0.1f);
+        if (!leftHandBehindHead) {
 
-        if (!leftHandCloseEnoughFromHead && !leftHandBehindHead) {
-            // Grab
-            if (inputs.inGame.grabState[0].lastEvent == ButtonState::Event::ShortPress)
+            if (inputs.inGame.grabState[0].wasDownLastFrame) {
+                // Left Drop - Need dual wield implementation. Dropping left item currently makes the game freak out
+                // and the right weapon disappears. Equipping another sword make both the previous sword and actual appear in hand.
+                //if (leftJoystickDir == JoyDir::Down)
+                //{
+                //    inputs.inGame.drop_weapon[0] = true;
+                //    gameState.prevent_grab_inputs = true;
+                //    gameState.drop_weapon_time = now;
+                //}
+                //// Grab
+                //else if (!gameState.prevent_grab_inputs)
                 newXRBtnHold |= VPAD_BUTTON_A;
+                //else if (now >= gameState.drop_weapon_time + delay)
+                //{
+                //   gameState.prevent_grab_inputs = false;
+                //}
+            }
+
 
             //Dpad menu
-            if (inputs.inGame.grabState[0].wasDownLastFrame) {
-                if (leftStickSource.currentState.y >= 0.5f) newXRBtnHold |= VPAD_BUTTON_UP;
-                else if (leftStickSource.currentState.y <= -0.5f) newXRBtnHold |= VPAD_BUTTON_DOWN;
-                if (leftStickSource.currentState.x <= -0.5f) newXRBtnHold |= VPAD_BUTTON_LEFT;
-                else if (leftStickSource.currentState.x >= 0.5f) newXRBtnHold |= VPAD_BUTTON_RIGHT;
+            if (!gameState.prevent_menu_inputs) {
+                if (inputs.inGame.grabState[0].wasDownLastFrame) {
+                    switch (leftJoystickDir) 
+                    {
+                        case JoyDir::Up: newXRBtnHold |= VPAD_BUTTON_UP; break;
+                        case JoyDir::Right: newXRBtnHold |= VPAD_BUTTON_RIGHT; break;
+                        case JoyDir::Down: newXRBtnHold |= VPAD_BUTTON_DOWN; break;
+                        case JoyDir::Left: newXRBtnHold |= VPAD_BUTTON_LEFT; break;
+                    }
+                    if (leftJoystickDir != JoyDir::None) {
+                        gameState.prevent_grab_inputs = true;
+                        gameState.prevent_grab_time = now;
+                    }
+                }
+            }
+            else if (now >= gameState.prevent_menu_time + delay) 
+                gameState.prevent_menu_inputs = false;
+        }
+
+        if (leftHandCloseEnoughFromHead && leftHandBehindHead)
+        {
+            VRManager::instance().XR->GetRumbleManager()->startSimpleRumble(true, 0.01f, 0.05f, 0.1f);
+            //Throw weapon left hand
+            if (inputs.inGame.grabState[0].wasDownLastFrame)
+                newXRBtnHold |= VPAD_BUTTON_R;
+        }
+            
+        if (!rightHandBehindHead)
+        {
+            if (inputs.inGame.grabState[1].wasDownLastFrame)
+            {
+                //Drop
+                if (rightJoystickDir == JoyDir::Down)
+                {
+                    inputs.inGame.drop_weapon[1] = true;
+                    gameState.prevent_grab_inputs = true;
+                    gameState.prevent_grab_time = now;
+                }  
+                // Grab
+                else if (!gameState.prevent_grab_inputs)
+                    newXRBtnHold |= VPAD_BUTTON_A;
+                else if (now >= gameState.prevent_grab_time + delay)
+                {
+                    gameState.prevent_grab_inputs = false;
+                }
             }
         }
-        //Throw weapon left hand
-        else if (leftHandCloseEnoughFromHead && leftHandBehindHead && inputs.inGame.grabState[0].wasDownLastFrame)
-            newXRBtnHold |= VPAD_BUTTON_R;
-
-        //Grab
-        if (!rightHandCloseEnoughFromHead && !rightHandBehindHead)
-        {
-            if (inputs.inGame.grabState[1].lastEvent == ButtonState::Event::ShortPress)
-                newXRBtnHold |= VPAD_BUTTON_A;
-        }
-        //Throw weapon right hand
-        else if (rightHandCloseEnoughFromHead && rightHandBehindHead && inputs.inGame.grabState[1].wasDownLastFrame)
-            newXRBtnHold |= VPAD_BUTTON_R;
         
+        if (rightHandCloseEnoughFromHead && rightHandBehindHead) {
+            VRManager::instance().XR->GetRumbleManager()->startSimpleRumble(false, 0.01f, 0.05f, 0.1f);
+            //Throw weapon right hand
+            if (inputs.inGame.grabState[1].wasDownLastFrame)
+                newXRBtnHold |= VPAD_BUTTON_R;
+        }
 
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.leftTrigger, VPAD_BUTTON_ZL);
         newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.rightTrigger, VPAD_BUTTON_ZR);
     }
     else {
-        if (!gameState.prevent_specific_inputs)
+        if (!gameState.prevent_menu_inputs)
         {
             //Log::print<INFO>("map open : {}", inputs.inMenu.map_open);
             if (gameState.map_open)
@@ -220,7 +288,7 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
             }
         }
         else if (!inputs.inMenu.mapAndInventory.currentState)
-            gameState.prevent_specific_inputs = false;
+            gameState.prevent_menu_inputs = false;
 
        /* newXRBtnHold |= mapXRButtonToVpad(inputs.inMenu.mapAndInventory, VPAD_BUTTON_MINUS);*/
 
@@ -233,19 +301,12 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
         newXRBtnHold |= mapXRButtonToVpad(inputs.inMenu.rightTrigger, VPAD_BUTTON_R);
 
         if (inputs.inMenu.leftGrip.currentState) {
-            if (leftStickSource.currentState.y >= 0.5f) {
-                newXRBtnHold |= VPAD_BUTTON_UP;
-            }
-            else if (leftStickSource.currentState.y <= -0.5f) {
-                newXRBtnHold |= VPAD_BUTTON_DOWN;
-            }
-
-            if (leftStickSource.currentState.x <= -0.5f) {
-                newXRBtnHold |= VPAD_BUTTON_LEFT;
-            }
-
-            else if (leftStickSource.currentState.x >= 0.5f) {
-                newXRBtnHold |= VPAD_BUTTON_RIGHT;
+            switch (leftJoystickDir)
+            {
+                case JoyDir::Up: newXRBtnHold |= VPAD_BUTTON_UP; break;
+                case JoyDir::Right: newXRBtnHold |= VPAD_BUTTON_RIGHT; break;
+                case JoyDir::Down: newXRBtnHold |= VPAD_BUTTON_DOWN; break;
+                case JoyDir::Left: newXRBtnHold |= VPAD_BUTTON_LEFT; break;
             }
         }
     }
@@ -255,9 +316,6 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
     // sticks
     static uint32_t oldXRStickHold = 0;
     uint32_t newXRStickHold = 0;
-
-    constexpr float AXIS_THRESHOLD = 0.5f;
-    constexpr float HOLD_THRESHOLD = 0.1f;
 
     // movement/navigation stick
     if (inputs.inGame.in_game) {
@@ -302,10 +360,6 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
         newXRStickHold |= VPAD_STICK_L_EMULATION_DOWN;
     else if (leftStickSource.currentState.y >= AXIS_THRESHOLD || (HAS_FLAG(oldXRStickHold, VPAD_STICK_L_EMULATION_UP) && leftStickSource.currentState.y >= HOLD_THRESHOLD))
         newXRStickHold |= VPAD_STICK_L_EMULATION_UP;
-
-
-    // camera/fast-scroll stick
-    XrActionStateVector2f& rightStickSource = inputs.inGame.in_game ? inputs.inGame.camera : inputs.inMenu.scroll;
 
     // disable up-and-down tilting
     if (IsFirstPerson() && inputs.inGame.in_game) {

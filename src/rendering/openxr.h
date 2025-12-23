@@ -48,6 +48,7 @@ public:
             XrActionStateBoolean cancel;
             XrActionStateBoolean interact;
             std::array<XrActionStateBoolean, 2> grab;
+            std::array<bool, 2> drop_weapon; // LEFT/RIGHT
 
             struct ButtonState {
                 enum class Event {
@@ -111,9 +112,10 @@ public:
         bool in_game = false;
         bool was_in_game = false;
         bool map_open = false;
-        bool dpad_menu_open = false;
-        bool was_dpad_menu_open = false;
-        bool prevent_specific_inputs = false;
+        bool prevent_menu_inputs = false;
+        std::chrono::steady_clock::time_point prevent_menu_time;
+        bool prevent_grab_inputs = false;
+        std::chrono::steady_clock::time_point prevent_grab_time;
     } gameState ;
 
     std::atomic<GameState> m_gameState{};

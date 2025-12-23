@@ -453,12 +453,12 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
     syncInfo.activeActionSets = &activeActionSet;
     checkXRResult(xrSyncActions(m_session, &syncInfo), "Failed to sync actions!");
 
-    InputState newState = {};
+    InputState newState = m_input.load();
     newState.inGame.in_game = !inMenu;
     newState.inGame.inputTime = predictedFrameTime;
-    newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
-    newState.inGame.grabState = m_input.load().inGame.grabState;
-    newState.inGame.mapAndInventoryState = m_input.load().inGame.mapAndInventoryState;
+    //newState.inGame.lastPickupSide = m_input.load().inGame.lastPickupSide;
+    //newState.inGame.grabState = m_input.load().inGame.grabState;
+    //newState.inGame.mapAndInventoryState = m_input.load().inGame.mapAndInventoryState;
 
     if (inMenu) {
         XrActionStateGetInfo getScrollInfo = { XR_TYPE_ACTION_STATE_GET_INFO };
