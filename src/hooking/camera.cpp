@@ -585,15 +585,33 @@ void CemuHooks::hook_GetEventName(PPCInterpreter_t* hCPU) {
 
 constexpr uint32_t orig_GetStaticParam_float_funcAddr = 0x030E9BE0;
 
+// hook for ksys::act::ai::ActionBase::getStaticParam<FLOAT> calls
 void CemuHooks::hook_OverwriteCameraParam(PPCInterpreter_t* hCPU) {
-    if (GetSettings().IsFirstPersonMode()) {
-        hCPU->instructionPointer = hCPU->sprNew.LR;
 
-        uint32_t destFloatPtr = getMemory<BEType<uint32_t>>(hCPU->gpr[4]).getLE();
+    uint32_t actionPtr = hCPU->gpr[3];
+    uint32_t destFloatPtr = hCPU->gpr[4];
+    const char* paramName = (const char*)(s_memoryBaseAddress + getMemory<BEType<uint32_t>>(hCPU->gpr[5]).getLE());
+
+    if (actionPtr == 0 || destFloatPtr == 0 || paramName == nullptr) {
+        hCPU->instructionPointer = orig_GetStaticParam_float_funcAddr;
+        return;
+    }
+    
+    std::string paramNameStr = paramName;
+
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+    if (paramNameStr == "JumpHeight") {
+        // override jump height to 1.2 in first person mode to temporarily workaround the increased gravity effect
+        uint32_t superLowAddress = 0x1031ADA4; // points to 1.2
+        writeMemoryBE(hCPU->gpr[4], &superLowAddress);
+        return;
+    }
+
+    if (GetSettings().IsFirstPersonMode()) {
         uint32_t superLowAddress = 0x102B3150; // points to 0.0000011920929
         writeMemoryBE(hCPU->gpr[4], &superLowAddress);
+        return;
     }
-    else {
-        hCPU->instructionPointer = orig_GetStaticParam_float_funcAddr;
-    }
+
+    hCPU->instructionPointer = orig_GetStaticParam_float_funcAddr;
 }
