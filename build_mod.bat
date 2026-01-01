@@ -1,3 +1,3 @@
 REM rmdir /Q /S build
-cmake -G "Visual Studio 17 2022" -A x64 --preset default -B ./build
-cmake --build ./build --config Debug --target ALL_BUILD
+cmake -G "Visual Studio 18 2026" -A x64 --preset Release -B ./build
+cmake --build ./build --config Release --target ALL_BUILD

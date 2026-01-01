@@ -13,8 +13,8 @@ mkdir "%TEMP_DIR%"
 mkdir "%TEMP_DIR%\BreathOfTheWild_BetterVR"
 
 REM Copy DLL
-if exist "Cemu\BetterVR_Layer.dll" (
-    copy "Cemu\BetterVR_Layer.dll" "%TEMP_DIR%\" >nul
+if exist "cmake-build-Release\bin\Release\BetterVR_Layer.dll" (
+    copy "cmake-build-Release\bin\Release\BetterVR_Layer.dll" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.dll
 ) else (
     echo Error: Cemu\BetterVR_Layer.dll not found.
@@ -22,8 +22,8 @@ if exist "Cemu\BetterVR_Layer.dll" (
 )
 
 REM Copy JSON
-if exist "Cemu\BetterVR_Layer.json" (
-    copy "Cemu\BetterVR_Layer.json" "%TEMP_DIR%\" >nul
+if exist "cmake-build-Release\bin\Release\BetterVR_Layer.json" (
+    copy "cmake-build-Release\bin\Release\BetterVR_Layer.json" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.json
 ) else (
     echo Error: Cemu\BetterVR_Layer.json not found.
@@ -31,22 +31,15 @@ if exist "Cemu\BetterVR_Layer.json" (
 )
 
 REM Copy LIB
-if exist "Cemu\BetterVR_Layer.lib" (
-    copy "Cemu\BetterVR_Layer.lib" "%TEMP_DIR%\" >nul
+if exist "cmake-build-Release\Release\BetterVR_Layer.lib" (
+    copy "cmake-build-Release\Release\BetterVR_Layer.lib" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.lib
 ) else (
     echo Error: Cemu\BetterVR_Layer.lib not found.
     goto :error
 )
 
-REM Copy PDB
-if exist "Cemu\BetterVR_Layer.pdb" (
-    copy "Cemu\BetterVR_Layer.pdb" "%TEMP_DIR%\" >nul
-    echo Copied BetterVR_Layer.pdb
-) else (
-    echo Error: Cemu\BetterVR_Layer.pdb not found.
-    goto :error
-)
+
 
 REM Copy bat
 if exist "resources\BetterVR LAUNCH CEMU IN VR.bat" (
