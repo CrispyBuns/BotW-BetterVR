@@ -318,7 +318,6 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
     }
 
     uint32_t weaponPtr = hCPU->gpr[3];
-    uint32_t parentActorPtr = hCPU->gpr[4];
     uint32_t heldIndex = hCPU->gpr[5]; // this is either 0 or 1 depending on which hand the weapon is in
     bool isHeldByPlayer = hCPU->gpr[6] == 0;
     uint32_t frameCounter = hCPU->gpr[7];

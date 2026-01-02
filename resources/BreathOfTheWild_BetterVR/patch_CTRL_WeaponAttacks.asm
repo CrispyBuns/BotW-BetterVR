@@ -151,8 +151,18 @@ lwz r4, 0x04(r1) ; r4 = Actor*
 bctrl
 mr r6, r3 ; r6 = Weapon::isHolding()
 
+; check if parent is player
 lwz r3, 0x08(r1) ; r3 = Weapon*
-lwz r4, 0x04(r1) ; r4 = Actor*
+lwz r3, 0xE8(r3) ; load vtable
+lwz r3, 0x4EC(r3) ; get Weapon::isParentPlayer function pointer
+mtctr r3
+lwz r3, 0x08(r1) ; r3 = Weapon*
+bctrl
+cmpwi r3, 0
+beq exit_hook_enableWeaponAttack
+
+lwz r3, 0x08(r1) ; r3 = Weapon*
+;lwz r4, 0x04(r1) ; r4 = Actor*
 lwz r5, 0x5F4(r3) ; r5 = Weapon::heldIndex
 
 li r7, 0
