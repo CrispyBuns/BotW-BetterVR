@@ -434,8 +434,6 @@ void CemuHooks::hook_ReplaceCameraMode(PPCInterpreter_t* hCPU) {
         if (IsFirstPerson()) {
             // overwrite to tail mode
             //hCPU->gpr[3] = cameraTailMode;
-
-            //hCPU->gpr[3] = cameraTailMode;
         }
     }
 
@@ -640,6 +638,25 @@ void CemuHooks::hook_OverwriteCameraParam(PPCInterpreter_t* hCPU) {
     }
 
     hCPU->instructionPointer = orig_GetStaticParam_float_funcAddr;
+}
+
+void CemuHooks::hook_FixLadder(PPCInterpreter_t* hCPU) {
+    hCPU->instructionPointer = hCPU->sprNew.LR;
+
+    auto input = VRManager::instance().XR->m_input.load();
+
+    if (input.inGame.in_game && s_isLadderClimbing == 0) {
+        return;
+    }
+
+    if (input.inGame.move.currentState.y >= -0.05) {
+        //Log::print<INFO>("PLAYER LADDER MODE UP {}", input.inGame.move.currentState.y);
+        hCPU->gpr[3] = 4; // allows pressing A to jump upwards, regardless of camera orientation
+    }
+    else {
+        //Log::print<INFO>("PLAYER LADDER MODE DOWN {}", input.inGame.move.currentState.y);
+        hCPU->gpr[3] = 1; // allows sliding down when holding move stick downwards
+    }
 }
 
 void CemuHooks::hook_PlayerLadderFix(PPCInterpreter_t* hCPU) {

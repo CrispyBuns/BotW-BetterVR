@@ -85,9 +85,11 @@ powershell -Command "Compress-Archive -Path '%TEMP_DIR%\*' -DestinationPath '%ZI
 REM Cleanup
 rmdir /S /Q "%TEMP_DIR%"
 echo Package created successfully: %ZIP_NAME%
+PAUSE
 goto :eof
 
 :error
 echo Failed to create package.
+PAUSE
 if exist "%TEMP_DIR%" rmdir /S /Q "%TEMP_DIR%"
 exit /b 1

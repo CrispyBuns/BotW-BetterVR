@@ -44,7 +44,7 @@ void RND_Renderer::StartFrame() {
     auto headsetRotation = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
     if (headsetRotation.has_value()) {
         // todo: update this as late as possible
-        VRManager::instance().XR->UpdateActions(m_frameState.predictedDisplayTime, headsetRotation.value(), !VRManager::instance().Hooks->IsInGame());
+        VRManager::instance().XR->UpdateActions(m_frameState.predictedDisplayTime, headsetRotation.value(), VRManager::instance().Hooks->IsShowingMenu());
     }
 }
 
@@ -505,6 +505,9 @@ std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(XrTim
     glm::quat headOrientation = ToGLM(spaceLocation.pose.orientation);
     glm::vec3 headPosition = ToGLM(spaceLocation.pose.position);
 
+    constexpr float DISTANCE = 1.5f;
+    constexpr float LERP_SPEED = 0.05f;
+
     if (CemuHooks::GetSettings().UIFollowsLookingDirection()) {
         m_currentOrientation = glm::slerp(m_currentOrientation, headOrientation, LERP_SPEED);
         glm::vec3 forwardDirection = headOrientation * glm::vec3(0.0f, 0.0f, -1.0f);
@@ -533,7 +536,7 @@ std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(XrTim
     const float height = aspectRatio <= 1.0f ? 1.0f / aspectRatio : 1.0f;
 
     // todo: change space to head space if we want to follow the head
-    constexpr float MENU_SIZE = 1.0f;
+    constexpr float MENU_SIZE = 0.8f;
 
     std::vector<XrCompositionLayerQuad> layers;
 

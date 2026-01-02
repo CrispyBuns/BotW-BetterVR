@@ -8,6 +8,17 @@ data_VRSettingsIn g_settings = {};
 uint64_t CemuHooks::s_memoryBaseAddress = 0;
 std::atomic_uint32_t CemuHooks::s_framesSinceLastCameraUpdate = 0;
 
+
+bool CemuHooks::IsScreenOpen(ScreenId screen) {
+    uint32_t screenManagerInstance = getMemory<BEType<uint32_t>>(0x1047E650).getLE();
+    if (screenManagerInstance != 0) {
+        uint32_t screenBools = getMemory<BEType<uint32_t>>(screenManagerInstance + 0x18).getLE();
+        uint32_t screenPtr = getMemory<BEType<uint32_t>>(screenBools + (std::to_underlying(screen) * 4)).getLE();
+        return screenPtr != 0;
+    }
+    return false;
+}
+
 void CemuHooks::hook_UpdateSettings(PPCInterpreter_t* hCPU) {
     // Log::print("Updated settings!");
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -25,6 +36,15 @@ void CemuHooks::hook_UpdateSettings(PPCInterpreter_t* hCPU) {
     std::lock_guard lock(g_settingsMutex);
     g_settings = settings;
     ++s_framesSinceLastCameraUpdate;
+
+    //constexpr uint32_t maxScreenIdx = std::to_underlying(ScreenId::ScreenId_END);
+    //for (uint32_t i = 0; i < maxScreenIdx; i++) {
+    //    ScreenId id = (ScreenId)i;
+    //    bool hasScreen = IsScreenOpen(id);
+    //    if (hasScreen) {
+    //        Log::print<INFO>("Screen {} is ON", ScreenIdToString((ScreenId)i));
+    //    }
+    //}
 
     static bool logSettings = true;
     if (logSettings) {

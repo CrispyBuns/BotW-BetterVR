@@ -202,9 +202,6 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
             newXRBtnHold |= VPAD_BUTTON_B;
         }
 
-        //workaround to quit npc menu not detected as menu. Will need to find a flag for those interactions later
-        newXRBtnHold |= mapXRButtonToVpad(inputs.inGame.jump, VPAD_BUTTON_B);
-
         if (!leftHandBehindHead) {
 
             if (inputs.inGame.grabState[0].wasDownLastFrame) {

@@ -781,6 +781,9 @@ void OpenXR::ProcessEvents() {
             case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED:
                 Log::print<WARNING>("OpenXR has indicated that the interaction profile has changed!");
                 break;
+            case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING:
+                Log::print<WARNING>("OpenXR has indicated that the reference space has changed!");
+                break;
             default:
                 Log::print<WARNING>("OpenXR has indicated that an unknown event with type {} has occurred!", std::to_underlying(eventData.type));
                 break;

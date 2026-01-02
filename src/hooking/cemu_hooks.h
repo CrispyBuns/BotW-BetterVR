@@ -64,6 +64,7 @@ public:
         osLib_registerHLEFunction("coreinit", "hook_ModifyHandModelAccessSearch", &hook_ModifyHandModelAccessSearch);
         osLib_registerHLEFunction("coreinit", "hook_CreateNewScreen", &hook_CreateNewScreen);
         osLib_registerHLEFunction("coreinit", "hook_RouteActorJob", &hook_RouteActorJob);
+        osLib_registerHLEFunction("coreinit", "hook_FixLadder", &hook_FixLadder);
     };
     ~CemuHooks() {
         FreeLibrary(m_cemuHandle);
@@ -94,6 +95,9 @@ public:
     static bool IsInGame() {
         // todo: check if 3 frames is the right threshold
         return GetFramesSinceLastCameraUpdate() <= 4;
+    }
+    static bool IsShowingMenu() {
+        return !IsInGame() || IsScreenOpen(ScreenId::ShopBG_00) || IsScreenOpen(ScreenId::MessageDialog);
     }
 
     static std::string s_currentEvent;
@@ -184,6 +188,7 @@ private:
     static uint64_t s_memoryBaseAddress;
     static std::atomic_uint32_t s_framesSinceLastCameraUpdate;
 
+    static bool IsScreenOpen(ScreenId screen);
     static void hook_UpdateSettings(PPCInterpreter_t* hCPU);
 
     // Actor Hooks
@@ -203,6 +208,7 @@ private:
     static void hook_GetEventName(PPCInterpreter_t* hCPU);
     static void hook_OverwriteCameraParam(PPCInterpreter_t* hCPU);
     static void hook_PlayerLadderFix(PPCInterpreter_t* hCPU);
+    static void hook_FixLadder(PPCInterpreter_t* hCPU);
 
     // First-Person Model Hooks
     static void hook_SetActorOpacity(PPCInterpreter_t* hCPU);

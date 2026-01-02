@@ -603,3 +603,315 @@ enum class ContactLayer : uint32_t {
     SensorCustomReceiver,
     SensorEnd
 };
+
+
+enum class ScreenId {
+    ScreenId_START = 0x0,
+
+    GamePadBG_00 = 0x0,
+    Title_00 = 0x1,
+    MainScreen3D_00 = 0x2,
+    Message3D_00 = 0x3,
+    AppCamera_00 = 0x4,
+    WolfLinkHeartGauge_00 = 0x5,
+    EnergyMeterDLC_00 = 0x6,
+    MainHorse_00 = 0x7,
+    MiniGame_00 = 0x8,
+    ReadyGo_00 = 0x9,
+    KeyNum_00 = 0xA,
+    MessageGet_00 = 0xB,
+    DoCommand_00 = 0xC,
+    SousaGuide_00 = 0xD,
+    GameTitle_00 = 0xE,
+    DemoName_00 = 0xF,
+    DemoNameEnemy_00 = 0x10,
+    MessageSp_00_NoTop = 0x11,
+    ShopBG_00 = 0x12,
+    ShopBtnList5_00 = 0x13,
+    ShopBtnList20_00 = 0x14,
+    ShopBtnList15_00 = 0x15,
+    ShopInfo_00 = 0x16,
+    ShopHorse_00 = 0x17,
+    Rupee_00 = 0x18,
+    KologNum_00 = 0x19,
+    AkashNum_00 = 0x1A,
+    MamoNum_00 = 0x1B,
+    Time_00 = 0x1C,
+    PauseMenuBG_00 = 0x1D,
+    SeekPadMenuBG_00 = 0x1E,
+    AppTool_00 = 0x1F,
+    AppAlbum_00 = 0x20,
+    AppPictureBook_00 = 0x21,
+    AppMapDungeon_00 = 0x22,
+    MainScreenMS_00 = 0x23,
+    MainScreenHeartIchigekiDLC_00 = 0x24,
+    MainScreen_00 = 0x25,
+    MainDungeon_00 = 0x26,
+    ChallengeWin_00 = 0x27,
+    PickUp_00 = 0x28,
+    MessageTipsRunTime_00 = 0x29,
+    AppMap_00 = 0x2A,
+    AppSystemWindowNoBtn_00 = 0x2B,
+    AppHome_00 = 0x2C,
+    MainShortCut_00 = 0x2D,
+    PauseMenu_00 = 0x2E,
+    PauseMenuInfo_00 = 0x2F,
+    GameOver_00 = 0x30,
+    HardMode_00 = 0x31,
+    SaveTransferWindow_00 = 0x32,
+    MessageTipsPauseMenu_00 = 0x33,
+    MessageTips_00 = 0x34,
+    OptionWindow_00 = 0x35,
+    AmiiboWindow_00 = 0x36,
+    SystemWindowNoBtn_00 = 0x37,
+    ControllerWindow_00 = 0x38,
+    SystemWindow_01 = 0x39,
+    SystemWindow_00 = 0x3A,
+    PauseMenuRecipe_00 = 0x3B,
+    PauseMenuMantan_00 = 0x3C,
+    PauseMenuEiketsu_00 = 0x3D,
+    AppSystemWindow_00 = 0x3E,
+    DLCWindow_00 = 0x3F,
+    HardModeTextDLC_00 = 0x40,
+    TestButton = 0x41,
+    TestPocketUIDRC = 0x42,
+    TestPocketUITV = 0x43,
+    BoxCursorTV = 0x44,
+    FadeDemo_00 = 0x45,
+    StaffRoll_00 = 0x46,
+    StaffRollDLC_00 = 0x47,
+    End_00 = 0x48,
+    DLCSinJuAkashiNum_00 = 0x49,
+    MessageDialog = 0x4A,
+    DemoMessage = 0x4B,
+    MessageSp_00 = 0x4C,
+    Thanks_00 = 0x4D,
+    Fade = 0x4E,
+    KeyBoradTextArea_00 = 0x4F,
+    LastComplete_00 = 0x50,
+    OPtext_00 = 0x51,
+    LoadingWeapon_00 = 0x52,
+    MainHardMode_00 = 0x53,
+    LoadSaveIcon_00 = 0x54,
+    FadeStatus_00 = 0x55,
+    Skip_00 = 0x56,
+    ChangeController_00 = 0x57,
+    ChangeControllerDRC_00 = 0x58,
+    DemoStart_00 = 0x59,
+    BootUp_00 = 0x5A,
+    BootUp_00_2 = 0x5B,
+    ChangeControllerNN_00 = 0x5C,
+    AppMenuBtn_00 = 0x5D,
+    HomeMenuCapture_00 = 0x5E,
+    HomeMenuCaptureDRC_00 = 0x5F,
+    HomeNixSign_00 = 0x60,
+    ErrorViewer_00 = 0x61,
+    ErrorViewerDRC_00 = 0x62,
+
+    ScreenId_END = ErrorViewerDRC_00
+};
+
+const char* ScreenIdToString(ScreenId e) {
+    switch (e) {
+        case ScreenId::GamePadBG_00:
+            return "GamePadBG_00";
+        case ScreenId::Title_00:
+            return "Title_00";
+        case ScreenId::MainScreen3D_00:
+            return "MainScreen3D_00";
+        case ScreenId::Message3D_00:
+            return "Message3D_00";
+        case ScreenId::AppCamera_00:
+            return "AppCamera_00";
+        case ScreenId::WolfLinkHeartGauge_00:
+            return "WolfLinkHeartGauge_00";
+        case ScreenId::EnergyMeterDLC_00:
+            return "EnergyMeterDLC_00";
+        case ScreenId::MainHorse_00:
+            return "MainHorse_00";
+        case ScreenId::MiniGame_00:
+            return "MiniGame_00";
+        case ScreenId::ReadyGo_00:
+            return "ReadyGo_00";
+        case ScreenId::KeyNum_00:
+            return "KeyNum_00";
+        case ScreenId::MessageGet_00:
+            return "MessageGet_00";
+        case ScreenId::DoCommand_00:
+            return "DoCommand_00";
+        case ScreenId::SousaGuide_00:
+            return "SousaGuide_00";
+        case ScreenId::GameTitle_00:
+            return "GameTitle_00";
+        case ScreenId::DemoName_00:
+            return "DemoName_00";
+        case ScreenId::DemoNameEnemy_00:
+            return "DemoNameEnemy_00";
+        case ScreenId::MessageSp_00_NoTop:
+            return "MessageSp_00_NoTop";
+        case ScreenId::ShopBG_00:
+            return "ShopBG_00";
+        case ScreenId::ShopBtnList5_00:
+            return "ShopBtnList5_00";
+        case ScreenId::ShopBtnList20_00:
+            return "ShopBtnList20_00";
+        case ScreenId::ShopBtnList15_00:
+            return "ShopBtnList15_00";
+        case ScreenId::ShopInfo_00:
+            return "ShopInfo_00";
+        case ScreenId::ShopHorse_00:
+            return "ShopHorse_00";
+        case ScreenId::Rupee_00:
+            return "Rupee_00";
+        case ScreenId::KologNum_00:
+            return "KologNum_00";
+        case ScreenId::AkashNum_00:
+            return "AkashNum_00";
+        case ScreenId::MamoNum_00:
+            return "MamoNum_00";
+        case ScreenId::Time_00:
+            return "Time_00";
+        case ScreenId::PauseMenuBG_00:
+            return "PauseMenuBG_00";
+        case ScreenId::SeekPadMenuBG_00:
+            return "SeekPadMenuBG_00";
+        case ScreenId::AppTool_00:
+            return "AppTool_00";
+        case ScreenId::AppAlbum_00:
+            return "AppAlbum_00";
+        case ScreenId::AppPictureBook_00:
+            return "AppPictureBook_00";
+        case ScreenId::AppMapDungeon_00:
+            return "AppMapDungeon_00";
+        case ScreenId::MainScreenMS_00:
+            return "MainScreenMS_00";
+        case ScreenId::MainScreenHeartIchigekiDLC_00:
+            return "MainScreenHeartIchigekiDLC_00";
+        case ScreenId::MainScreen_00:
+            return "MainScreen_00";
+        case ScreenId::MainDungeon_00:
+            return "MainDungeon_00";
+        case ScreenId::ChallengeWin_00:
+            return "ChallengeWin_00";
+        case ScreenId::PickUp_00:
+            return "PickUp_00";
+        case ScreenId::MessageTipsRunTime_00:
+            return "MessageTipsRunTime_00";
+        case ScreenId::AppMap_00:
+            return "AppMap_00";
+        case ScreenId::AppSystemWindowNoBtn_00:
+            return "AppSystemWindowNoBtn_00";
+        case ScreenId::AppHome_00:
+            return "AppHome_00";
+        case ScreenId::MainShortCut_00:
+            return "MainShortCut_00";
+        case ScreenId::PauseMenu_00:
+            return "PauseMenu_00";
+        case ScreenId::PauseMenuInfo_00:
+            return "PauseMenuInfo_00";
+        case ScreenId::GameOver_00:
+            return "GameOver_00";
+        case ScreenId::HardMode_00:
+            return "HardMode_00";
+        case ScreenId::SaveTransferWindow_00:
+            return "SaveTransferWindow_00";
+        case ScreenId::MessageTipsPauseMenu_00:
+            return "MessageTipsPauseMenu_00";
+        case ScreenId::MessageTips_00:
+            return "MessageTips_00";
+        case ScreenId::OptionWindow_00:
+            return "OptionWindow_00";
+        case ScreenId::AmiiboWindow_00:
+            return "AmiiboWindow_00";
+        case ScreenId::SystemWindowNoBtn_00:
+            return "SystemWindowNoBtn_00";
+        case ScreenId::ControllerWindow_00:
+            return "ControllerWindow_00";
+        case ScreenId::SystemWindow_01:
+            return "SystemWindow_01";
+        case ScreenId::SystemWindow_00:
+            return "SystemWindow_00";
+        case ScreenId::PauseMenuRecipe_00:
+            return "PauseMenuRecipe_00";
+        case ScreenId::PauseMenuMantan_00:
+            return "PauseMenuMantan_00";
+        case ScreenId::PauseMenuEiketsu_00:
+            return "PauseMenuEiketsu_00";
+        case ScreenId::AppSystemWindow_00:
+            return "AppSystemWindow_00";
+        case ScreenId::DLCWindow_00:
+            return "DLCWindow_00";
+        case ScreenId::HardModeTextDLC_00:
+            return "HardModeTextDLC_00";
+        case ScreenId::TestButton:
+            return "TestButton";
+        case ScreenId::TestPocketUIDRC:
+            return "TestPocketUIDRC";
+        case ScreenId::TestPocketUITV:
+            return "TestPocketUITV";
+        case ScreenId::BoxCursorTV:
+            return "BoxCursorTV";
+        case ScreenId::FadeDemo_00:
+            return "FadeDemo_00";
+        case ScreenId::StaffRoll_00:
+            return "StaffRoll_00";
+        case ScreenId::StaffRollDLC_00:
+            return "StaffRollDLC_00";
+        case ScreenId::End_00:
+            return "End_00";
+        case ScreenId::DLCSinJuAkashiNum_00:
+            return "DLCSinJuAkashiNum_00";
+        case ScreenId::MessageDialog:
+            return "MessageDialog";
+        case ScreenId::DemoMessage:
+            return "DemoMessage";
+        case ScreenId::MessageSp_00:
+            return "MessageSp_00";
+        case ScreenId::Thanks_00:
+            return "Thanks_00";
+        case ScreenId::Fade:
+            return "Fade";
+        case ScreenId::KeyBoradTextArea_00:
+            return "KeyBoradTextArea_00";
+        case ScreenId::LastComplete_00:
+            return "LastComplete_00";
+        case ScreenId::OPtext_00:
+            return "OPtext_00";
+        case ScreenId::LoadingWeapon_00:
+            return "LoadingWeapon_00";
+        case ScreenId::MainHardMode_00:
+            return "MainHardMode_00";
+        case ScreenId::LoadSaveIcon_00:
+            return "LoadSaveIcon_00";
+        case ScreenId::FadeStatus_00:
+            return "FadeStatus_00";
+        case ScreenId::Skip_00:
+            return "Skip_00";
+        case ScreenId::ChangeController_00:
+            return "ChangeController_00";
+        case ScreenId::ChangeControllerDRC_00:
+            return "ChangeControllerDRC_00";
+        case ScreenId::DemoStart_00:
+            return "DemoStart_00";
+        case ScreenId::BootUp_00:
+            return "BootUp_00";
+        case ScreenId::BootUp_00_2:
+            return "BootUp_00_2";
+        case ScreenId::ChangeControllerNN_00:
+            return "ChangeControllerNN_00";
+        case ScreenId::AppMenuBtn_00:
+            return "AppMenuBtn_00";
+        case ScreenId::HomeMenuCapture_00:
+            return "HomeMenuCapture_00";
+        case ScreenId::HomeMenuCaptureDRC_00:
+            return "HomeMenuCaptureDRC_00";
+        case ScreenId::HomeNixSign_00:
+            return "HomeNixSign_00";
+        case ScreenId::ErrorViewer_00:
+            return "ErrorViewer_00";
+        case ScreenId::ErrorViewerDRC_00:
+            return "ErrorViewerDRC_00";
+        default:
+            return "unknown";
+    }
+}

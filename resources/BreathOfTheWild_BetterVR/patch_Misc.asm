@@ -3,6 +3,11 @@ moduleMatches = 0x6267BFD0
 
 .origin = codecave
 
+
+; forces the player to always be guarding when the shield is drawn
+; uses player rotation to determine the guard direction, not shield direction
+;0x02D79F50 = li r3, 1
+
 ; forces StartShiekSensorGaugeDemo to instantly finish and not get softlocked (which happens when you unlock a tower)
 ; this disables the gauge animation where it would get stuck in
 ; not ideal but better than softlocking

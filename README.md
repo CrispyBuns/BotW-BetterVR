@@ -41,20 +41,21 @@ While more integrated solutions are being found out, there's probably ways to se
 > If you want to help to improve the mod and tackle some of these issues, reach out in the ZBW Development Channel in the [Flat2VR Discord](https://discord.com/invite/flat2vr) for extra info, context and requirements!
 >
 > **Critical Issues:**
-> * Climbing ladders requires looking away with the camera using your controller stick.
 > * **Weapon Glitch:** Sometimes weapons will stop registering hits on enemies.
 >   * *Quick Fix:* Quickly drop and pick up your weapon (`Right Grip` + `R-Stick Down`).
 >   * *Alt Fix:* Throw the weapon or cycle through weapons in the inventory menu.
 >   * *Last Resort:* Teleport to a tower/shrine or reload your save.
-> * Third-person mode (and cutscenes) often has the player being partially/largely invisible.
 > * Gravity is higher. Jumping isn't affected, but some shrines might require creative solutions/glitches for now.
-> * Some towers can't be unlocked and cause the cutscene to softlock.
-> ~~* Our AMD GPU system has a crash after the load screen, which we're working on fixing.~~ This is fixed now!
+> * ~~Third-person mode (and cutscenes) often has the player being partially/largely invisible.~~ This is fixed now!
+> * ~~Climbing ladders requires looking away with the camera using your controller stick.~~ This is fixed now!
+> * ~~Some towers can't be unlocked and cause the cutscene to softlock.~~ This is fixed now!
+> * ~~Our AMD GPU system has a crash after the load screen, which we're working on fixing.~~ This is fixed now!
 
 **Audio & Visuals**
 - Slight audio crackling may occur when loading the game or opening menus quickly.
 - Video cutscenes are slow and may have out-of-sync audio. Some voice-acted cutscenes may also overlap or play out of sync.
 - While inside the Divine Beasts, skyboxes appear to sway with the camera more then intended.
+- Stamina wheel is weirdly positioned.
 
 **Gameplay & Combat**
 - Flurry Rush can be triggered but does not work
@@ -66,6 +67,7 @@ While more integrated solutions are being found out, there's probably ways to se
 - Exiting the water while swimming can be difficult at certain angles. Swim dashing sometimes doesn't work. 
 - Magnesis & Stasis aim is off-center at far distances. Point your gaze to the **right** of the object to highlight it.
 - Shrine exits require looking at the bottom of the altar from a slight distance before the prompt might appear.
+- Climbing ladders require jumping up the ladder to go up and you have to look at the ladder.
 
 ### Mod Installation
 

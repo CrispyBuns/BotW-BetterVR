@@ -131,4 +131,9 @@ blr
 0x02B9D324 = bla import.coreinit.hook_OverwriteCameraParam
 
 
+; workaround for ladder climbing issue
+; Always sets the ladder mode to 4 which allows pressing A to jump up ladders
+; Sets the ladder mode to 1 when player is moving the stick downwards to allow sliding down ladders
+0x02D69E04 = ba import.coreinit.hook_FixLadder
+
 0x02D07CE8 = ba import.coreinit.hook_PlayerLadderFix
