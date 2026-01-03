@@ -13,8 +13,8 @@ mkdir "%TEMP_DIR%"
 mkdir "%TEMP_DIR%\BreathOfTheWild_BetterVR"
 
 REM Copy DLL
-if exist "build\bin\Release\BetterVR_Layer.dll" (
-    copy "build\bin\Release\BetterVR_Layer.dll" "%TEMP_DIR%\" >nul
+if exist "Cemu\BetterVR_Layer.dll" (
+    copy "Cemu\BetterVR_Layer.dll" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.dll
 ) else (
     echo Error: Cemu\BetterVR_Layer.dll not found.
@@ -22,8 +22,8 @@ if exist "build\bin\Release\BetterVR_Layer.dll" (
 )
 
 REM Copy JSON
-if exist "build\bin\Release\BetterVR_Layer.json" (
-    copy "build\bin\Release\BetterVR_Layer.json" "%TEMP_DIR%\" >nul
+if exist "Cemu\BetterVR_Layer.json" (
+    copy "Cemu\BetterVR_Layer.json" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.json
 ) else (
     echo Error: Cemu\BetterVR_Layer.json not found.
@@ -31,8 +31,8 @@ if exist "build\bin\Release\BetterVR_Layer.json" (
 )
 
 REM Copy LIB
-if exist "build\Release\BetterVR_Layer.lib" (
-    copy "build\Release\BetterVR_Layer.lib" "%TEMP_DIR%\" >nul
+if exist "Cemu\BetterVR_Layer.lib" (
+    copy "Cemu\BetterVR_Layer.lib" "%TEMP_DIR%\" >nul
     echo Copied BetterVR_Layer.lib
 ) else (
     echo Error: Cemu\BetterVR_Layer.lib not found.
