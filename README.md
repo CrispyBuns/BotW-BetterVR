@@ -41,15 +41,13 @@ While more integrated solutions are being found out, there's probably ways to se
 > If you want to help to improve the mod and tackle some of these issues, reach out in the ZBW Development Channel in the [Flat2VR Discord](https://discord.com/invite/flat2vr) for extra info, context and requirements!
 >
 > **Critical Issues:**
-> * **Weapon Glitch:** Sometimes weapons will stop registering hits on enemies.
->   * *Quick Fix:* Quickly drop and pick up your weapon (`Right Grip` + `R-Stick Down`).
->   * *Alt Fix:* Throw the weapon or cycle through weapons in the inventory menu.
->   * *Last Resort:* Teleport to a tower/shrine or reload your save.
 > * Gravity is higher. Jumping isn't affected, but some shrines might require creative solutions/glitches for now.
+> * Weapons might deregister rarely (after breaking?). You might have to drop and pick it up again.
 > * ~~Third-person mode (and cutscenes) often has the player being partially/largely invisible.~~ This is fixed now!
 > * ~~Climbing ladders requires looking away with the camera using your controller stick.~~ This is fixed now!
 > * ~~Some towers can't be unlocked and cause the cutscene to softlock.~~ This is fixed now!
 > * ~~Our AMD GPU system has a crash after the load screen, which we're working on fixing.~~ This is fixed now!
+> * ~~**Weapon Glitch:** Sometimes weapons will stop registering hits on enemies.~~
 
 **Audio & Visuals**
 - Slight audio crackling may occur when loading the game or opening menus quickly.
@@ -93,9 +91,10 @@ While more integrated solutions are being found out, there's probably ways to se
 
 6. For an enjoyable experience you should change some other graphic packs in this same window too:
    - `Graphics` graphic pack: Use any (non-ultrawide!) resolution of 1440p (2k) or higher for clarity. Also change anti-aliasing to Nvidia FXAA.
+      **Make sure that you don't use a resolution under 1280x720, or else the game will never show up!**
    - `FPS++` graphic pack: Change the FPS limit to at least 120FPS or 144FPS. The OpenXR headset will dictate the framerate anyway.
    - `Enhancements`: graphic pack: Change anisotropic filtering to 16x and use your preferred preset.
-   - Any other settings like shadows, draw distance etc. You can always play around with this to see what the performance hit is.
+   - Any other settings like shadows, draw distance etc. You can always play around with this to see what the performance hit is.  
 
 7. Close the settings and start the game like normal from Cemu's game list. You can now put on your VR headset and if installed correctly it should now work!
 
@@ -133,7 +132,7 @@ If you want to know more about the technical details, feel free to ask in the Be
 There's enough that was skipped over or left out in this explanation.
 
 
-### Build Instructions
+### Build Instructions (For Developers)
 
 1. Install the latest Vulkan SDK from https://vulkan.lunarg.com/sdk/home#windows and make sure that VULKAN_SDK was added
    to your environment variables.

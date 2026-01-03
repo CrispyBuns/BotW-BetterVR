@@ -711,7 +711,7 @@ enum class ScreenId {
     ScreenId_END = ErrorViewerDRC_00
 };
 
-const char* ScreenIdToString(ScreenId e) {
+static const char* ScreenIdToString(ScreenId e) {
     switch (e) {
         case ScreenId::GamePadBG_00:
             return "GamePadBG_00";

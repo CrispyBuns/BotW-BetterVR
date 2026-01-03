@@ -114,7 +114,7 @@ public:
         void Render(OpenXR::EyeSide side, long frameIdx);
         const std::array<XrCompositionLayerProjectionView, 2>& FinishRendering(long frameIdx);
 
-        float GetAspectRatio(OpenXR::EyeSide side) const { return m_swapchains[side]->GetWidth() / (float)m_swapchains[side]->GetHeight(); }
+        float GetAspectRatio(OpenXR::EyeSide side) const { return m_recommendedAspectRatios[side]; }
         long GetCurrentFrameIdx() const { return m_currentFrameIdx; }
 
     private:
@@ -123,6 +123,7 @@ public:
         std::array<std::unique_ptr<RND_D3D12::PresentPipeline<true>>, 2> m_presentPipelines;
         std::array<std::array<std::unique_ptr<SharedTexture>, 2>, 2> m_textures;
         std::array<std::array<std::unique_ptr<SharedTexture>, 2>, 2> m_depthTextures;
+        std::array<float, 2> m_recommendedAspectRatios = { 1.0f, 1.0f };
 
         std::array<XrCompositionLayerProjectionView, 2> m_projectionViews = {};
         std::array<XrCompositionLayerDepthInfoKHR, 2> m_projectionViewsDepthInfo = {};

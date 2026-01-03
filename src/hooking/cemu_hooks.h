@@ -94,7 +94,7 @@ public:
     static uint32_t GetFramesSinceLastCameraUpdate() { return s_framesSinceLastCameraUpdate.load(); }
     static bool IsInGame() {
         // todo: check if 3 frames is the right threshold
-        return GetFramesSinceLastCameraUpdate() <= 4;
+        return GetFramesSinceLastCameraUpdate() <= 4 && !IsScreenOpen(ScreenId::PauseMenuInfo_00);
     }
     static bool IsShowingMenu() {
         return !IsInGame() || IsScreenOpen(ScreenId::ShopBG_00) || IsScreenOpen(ScreenId::MessageDialog);

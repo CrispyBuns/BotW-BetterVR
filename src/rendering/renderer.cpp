@@ -118,7 +118,7 @@ void RND_Renderer::EndFrame() {
     frameEndInfo.layers = compositionLayers.data();
 
     if (s_endFrameCount % 500 == 0) {
-        Log::print<VERBOSE>("EndFrame #{}: frameIdx={}, layers={}, 3D={}, 2D={}",
+        Log::print<INTEROP>("EndFrame #{}: frameIdx={}, layers={}, 3D={}, 2D={}",
             s_endFrameCount, frameIdx, compositionLayers.size(),
             (frameIdx != -1 && m_renderFrames[frameIdx].presented3D) ? "yes" : "no",
             m_presented2DLastFrame ? "yes" : "no");
@@ -135,14 +135,16 @@ void RND_Renderer::EndFrame() {
 RND_Renderer::Layer3D::Layer3D(VkExtent2D extent) {
     auto viewConfs = VRManager::instance().XR->GetViewConfigurations();
 
+    this->m_recommendedAspectRatios[OpenXR::EyeSide::LEFT] = (float)viewConfs[0].recommendedImageRectWidth / (float)viewConfs[0].recommendedImageRectHeight;
+    this->m_recommendedAspectRatios[OpenXR::EyeSide::RIGHT] = (float)viewConfs[1].recommendedImageRectWidth / (float)viewConfs[1].recommendedImageRectHeight;
+
     this->m_presentPipelines[OpenXR::EyeSide::LEFT] = std::make_unique<RND_D3D12::PresentPipeline<true>>(VRManager::instance().XR->GetRenderer());
     this->m_presentPipelines[OpenXR::EyeSide::RIGHT] = std::make_unique<RND_D3D12::PresentPipeline<true>>(VRManager::instance().XR->GetRenderer());
 
-    // note: it's possible to make a swapchain that matches Cemu's internal resolution and let the headset downsample it, although I doubt there's a benefit
-    this->m_swapchains[OpenXR::EyeSide::LEFT] = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(viewConfs[0].recommendedImageRectWidth, viewConfs[0].recommendedImageRectHeight, viewConfs[0].recommendedSwapchainSampleCount);
-    this->m_swapchains[OpenXR::EyeSide::RIGHT] = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(viewConfs[1].recommendedImageRectWidth, viewConfs[1].recommendedImageRectHeight, viewConfs[1].recommendedSwapchainSampleCount);
-    this->m_depthSwapchains[OpenXR::EyeSide::LEFT] = std::make_unique<Swapchain<DXGI_FORMAT_D32_FLOAT>>(viewConfs[0].recommendedImageRectWidth, viewConfs[0].recommendedImageRectHeight, viewConfs[0].recommendedSwapchainSampleCount);
-    this->m_depthSwapchains[OpenXR::EyeSide::RIGHT] = std::make_unique<Swapchain<DXGI_FORMAT_D32_FLOAT>>(viewConfs[1].recommendedImageRectWidth, viewConfs[1].recommendedImageRectHeight, viewConfs[1].recommendedSwapchainSampleCount);
+    this->m_swapchains[OpenXR::EyeSide::LEFT] = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(extent.width, extent.height, viewConfs[0].recommendedSwapchainSampleCount);
+    this->m_swapchains[OpenXR::EyeSide::RIGHT] = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(extent.width, extent.height, viewConfs[1].recommendedSwapchainSampleCount);
+    this->m_depthSwapchains[OpenXR::EyeSide::LEFT] = std::make_unique<Swapchain<DXGI_FORMAT_D32_FLOAT>>(extent.width, extent.height, viewConfs[0].recommendedSwapchainSampleCount);
+    this->m_depthSwapchains[OpenXR::EyeSide::RIGHT] = std::make_unique<Swapchain<DXGI_FORMAT_D32_FLOAT>>(extent.width, extent.height, viewConfs[1].recommendedSwapchainSampleCount);
 
     this->m_presentPipelines[OpenXR::EyeSide::LEFT]->BindSettings((float)this->m_swapchains[OpenXR::EyeSide::LEFT]->GetWidth(), (float)this->m_swapchains[OpenXR::EyeSide::LEFT]->GetHeight());
     this->m_presentPipelines[OpenXR::EyeSide::RIGHT]->BindSettings((float)this->m_swapchains[OpenXR::EyeSide::RIGHT]->GetWidth(), (float)this->m_swapchains[OpenXR::EyeSide::RIGHT]->GetHeight());
@@ -202,8 +204,7 @@ SharedTexture* RND_Renderer::Layer3D::CopyColorToLayer(OpenXR::EyeSide side, VkC
 
     // Log every 100 copies to track progress without spam
     if (s_copyCount % 100 == 0) {
-        Log::print<VERBOSE>("Layer3D::CopyColorToLayer #{} - side={}, frameIdx={}, srcImage={}",
-            s_copyCount, side == OpenXR::EyeSide::LEFT ? "L" : "R", frameIdx, (void*)image);
+        Log::print<INTEROP>("Layer3D::CopyColorToLayer #{} - side={}, frameIdx={}, srcImage={}", s_copyCount, side == OpenXR::EyeSide::LEFT ? "L" : "R", frameIdx, (void*)image);
     }
     m_currentFrameIdx = frameIdx;
     m_textures[side][frameIdx]->CopyFromVkImage(copyCmdBuffer, image, srcImageLayout);
@@ -404,8 +405,7 @@ RND_Renderer::Layer2D::Layer2D(VkExtent2D extent) {
 
     this->m_presentPipeline = std::make_unique<RND_D3D12::PresentPipeline<false>>(VRManager::instance().XR->GetRenderer());
 
-    // note: it's possible to make a swapchain that matches Cemu's internal resolution and let the headset downsample it, although I doubt there's a benefit
-    this->m_swapchain = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(viewConfs[0].recommendedImageRectWidth, viewConfs[0].recommendedImageRectHeight, viewConfs[0].recommendedSwapchainSampleCount);
+    this->m_swapchain = std::make_unique<Swapchain<DXGI_FORMAT_R8G8B8A8_UNORM_SRGB>>(extent.width, extent.height, viewConfs[0].recommendedSwapchainSampleCount);
 
     this->m_presentPipeline->BindSettings((float)this->m_swapchain->GetWidth(), (float)this->m_swapchain->GetHeight());
 
@@ -440,7 +440,7 @@ SharedTexture* RND_Renderer::Layer2D::CopyColorToLayer(VkCommandBuffer copyCmdBu
     static uint32_t s_copyCount = 0;
     s_copyCount++;
     if (s_copyCount % 100 == 0) {
-        Log::print<VERBOSE>("Layer2D::CopyColorToLayer #{} - frameIdx={}, srcImage={}", s_copyCount, frameIdx, (void*)image);
+        Log::print<INTEROP>("Layer2D::CopyColorToLayer #{} - frameIdx={}, srcImage={}", s_copyCount, frameIdx, (void*)image);
     }
     m_currentFrameIdx = frameIdx;
     m_textures[frameIdx]->CopyFromVkImage(copyCmdBuffer, image, srcImageLayout);

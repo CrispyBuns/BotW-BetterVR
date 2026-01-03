@@ -19,6 +19,8 @@ bool CemuHooks::IsScreenOpen(ScreenId screen) {
     return false;
 }
 
+std::unordered_set<ScreenId> prevEnabledScreens = {};
+
 void CemuHooks::hook_UpdateSettings(PPCInterpreter_t* hCPU) {
     // Log::print("Updated settings!");
     hCPU->instructionPointer = hCPU->sprNew.LR;
@@ -37,14 +39,29 @@ void CemuHooks::hook_UpdateSettings(PPCInterpreter_t* hCPU) {
     g_settings = settings;
     ++s_framesSinceLastCameraUpdate;
 
-    //constexpr uint32_t maxScreenIdx = std::to_underlying(ScreenId::ScreenId_END);
-    //for (uint32_t i = 0; i < maxScreenIdx; i++) {
-    //    ScreenId id = (ScreenId)i;
-    //    bool hasScreen = IsScreenOpen(id);
-    //    if (hasScreen) {
-    //        Log::print<INFO>("Screen {} is ON", ScreenIdToString((ScreenId)i));
-    //    }
-    //}
+#ifdef _DEBUG
+    constexpr uint32_t maxScreenIdx = std::to_underlying(ScreenId::ScreenId_END);
+    std::unordered_set<ScreenId> currentEnabledScreens;
+    for (uint32_t i = 0; i < maxScreenIdx; i++) {
+        ScreenId id = (ScreenId)i;
+        bool hasScreen = IsScreenOpen(id);
+
+        if (hasScreen) {            
+
+            if (!prevEnabledScreens.contains(id)) {
+                if (currentEnabledScreens.empty()) {
+                    Log::print<INFO>("---------");
+                }
+                Log::print<INFO>("Screen {} is ON", ScreenIdToString((ScreenId)i));
+            }
+            currentEnabledScreens.emplace(id);
+        }
+        else if (prevEnabledScreens.contains(id)) {
+            Log::print<INFO>("Screen {} is OFF", ScreenIdToString((ScreenId)i));
+        }
+    }
+    prevEnabledScreens = currentEnabledScreens;
+#endif
 
     static bool logSettings = true;
     if (logSettings) {
